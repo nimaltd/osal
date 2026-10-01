@@ -1,0 +1,43 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Host unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The same command a developer runs locally. One definition of "run the
+      # tests", so CI and a workstation cannot drift apart.
+      - name: Build and test
+        run: python3 test/run_tests.py
+
+  arm-build:
+    name: Cross compile for Cortex-M
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Third party action, pinned to the v1.13.0 commit rather than the tag, so
+      # the code that runs here cannot change without this line changing.
+      - name: Install arm-none-eabi-gcc
+        uses: carlosperate/arm-none-eabi-gcc-action@98c40e51546516419841748d3210c290df0d2c6c
+
+      # osal is only a header, so the test file stands in as the code that uses
+      # it. It is compiled for the target once with the shipped osal_config.h,
+      # then once per RTOS, the way the tests build it.
+      - name: Compile
+        run: |
+          flags="-mcpu=cortex-m4 -mthumb -std=c11 -Wall -Wextra -Wpedantic -Werror -Os"
+          inc="-Isrc -Itest/stub -Itest/unity"
+          arm-none-eabi-gcc -c test/test_osal.c -o /tmp/osal.o $inc $flags
+          for rtos in CMSIS_V1 CMSIS_V2 THREADX; do
+            arm-none-eabi-gcc -c test/test_osal.c -o /tmp/osal_$rtos.o $inc $flags \
+              -DOSAL_CONFIG_H -DOSAL_RTOS=OSAL_RTOS_$rtos
+          done
