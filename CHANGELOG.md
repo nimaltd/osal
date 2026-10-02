@@ -9,7 +9,9 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 
 - The first release: a mutex and a delay, the same on bare metal, FreeRTOS
   through CMSIS-RTOS v1 or v2, and ThreadX, chosen by `OSAL_RTOS` in
-  `osal_config.h`. The whole library is one header.
+  `osal_config.h`. The library is headers only: `osal.h` checks the
+  setting and includes the one port header for that RTOS, `osal_none.h`,
+  `osal_cmsis_v1.h`, `osal_cmsis_v2.h` or `osal_threadx.h`.
 - `osal_mutex_create()`, `osal_mutex_lock()` and `osal_mutex_unlock()`, with
   priority inheritance, and `osal_delay_ms()`.
 - With an RTOS, it is called only from a thread once the RTOS has started,

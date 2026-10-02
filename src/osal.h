@@ -14,9 +14,10 @@
  *              SPDX-License-Identifier: Apache-2.0
  *              See LICENSE.md in the project root for the full license text.
  *
- * @note        The whole library is this header, so there is nothing to
- *              compile. Not for use from an interrupt, and with an RTOS,
- *              only from a thread once the RTOS has started.
+ * @note        The only osal file to include. It reads OSAL_RTOS from
+ *              osal_config.h and includes the one port header for that RTOS.
+ *              Not for use from an interrupt, and with an RTOS, only from a
+ *              thread once the RTOS has started.
  */
 
 #ifndef OSAL_H
@@ -28,7 +29,6 @@
  * ****************************************************************************************************
 */
 
-#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -60,15 +60,6 @@
 #error "OSAL_RTOS must be one of the OSAL_RTOS_ values listed in osal_config.h"
 #endif
 
-/* The mutex type comes from the RTOS, so its header is needed here. */
-#if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
-#include "cmsis_os.h"
-#elif OSAL_RTOS == OSAL_RTOS_CMSIS_V2
-#include "cmsis_os2.h"
-#elif OSAL_RTOS == OSAL_RTOS_THREADX
-#include "tx_api.h"
-#endif
-
 #ifdef __cplusplus
 extern "C"
 {
@@ -93,258 +84,15 @@ typedef enum
 
 } osal_err_t;
 
-/*****************************************************************************************************/
-/**
- * @brief A mutex. Put one wherever it is needed, a struct member included.
- */
-typedef struct
-{
-#if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
-    osMutexId   mutex;  /**< The RTOS mutex.                                 */
-#elif OSAL_RTOS == OSAL_RTOS_CMSIS_V2
-    osMutexId_t mutex;  /**< The RTOS mutex.                                 */
-#elif OSAL_RTOS == OSAL_RTOS_THREADX
-    TX_MUTEX    mutex;  /**< The RTOS mutex, kept here so no heap is needed. */
-#else
-    uint8_t     unused; /**< Bare metal needs none, and C wants a member.    */
-#endif
-
-} osal_mutex_t;
-
-/*
- * ****************************************************************************************************
- * Private function prototypes
- * ****************************************************************************************************
-*/
-
-#if (OSAL_RTOS == OSAL_RTOS_CMSIS_V2) || (OSAL_RTOS == OSAL_RTOS_THREADX)
-static inline uint32_t osal_ticks(uint32_t ms, uint32_t tick_hz);
-#endif
-
-/*
- * ****************************************************************************************************
- * Public function implementations
- * ****************************************************************************************************
-*/
-
-/*****************************************************************************************************/
-/**
- * @brief Create a mutex. Call it once per mutex.
- *
- * @param[out] mutex  Mutex to create.
- * @return OSAL_ERR_NONE, OSAL_ERR_INVALID or OSAL_ERR_MUTEX.
- */
-static inline osal_err_t osal_mutex_create(osal_mutex_t *mutex)
-{
-    osal_err_t err = OSAL_ERR_INVALID;
-
-    if (mutex != NULL)
-    {
-        err = OSAL_ERR_NONE;
-
-#if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
-        {
-            /* With no control block in the definition, every call allocates
-               a mutex of its own, from the RTOS heap. */
-            osMutexDef(osal_mutex);
-
-            mutex->mutex = osMutexCreate(osMutex(osal_mutex));
-        }
-
-        /* NULL most often means the RTOS heap is too small. */
-        if (mutex->mutex == NULL)
-        {
-            err = OSAL_ERR_MUTEX;
-        }
-#elif OSAL_RTOS == OSAL_RTOS_CMSIS_V2
-        {
-            /* Priority inheritance, so a low priority thread holding the mutex
-               is not held up by a medium one while a high priority thread
-               waits for it. */
-            const osMutexAttr_t attr = { "osal", osMutexPrioInherit, NULL, 0U };
-
-            mutex->mutex = osMutexNew(&attr);
-        }
-
-        /* NULL most often means the RTOS heap is too small. */
-        if (mutex->mutex == NULL)
-        {
-            err = OSAL_ERR_MUTEX;
-        }
-#elif OSAL_RTOS == OSAL_RTOS_THREADX
-        /* Inside osal_mutex_t, so no heap is needed. Priority inheritance, for
-           the same reason as above. */
-        if (tx_mutex_create(&mutex->mutex, (CHAR *)"osal", TX_INHERIT) != TX_SUCCESS)
-        {
-            err = OSAL_ERR_MUTEX;
-        }
-#else
-        /* Bare metal has no other thread to keep out. */
-        mutex->unused = 0U;
-#endif
-    }
-
-    return err;
-}
-
-/*****************************************************************************************************/
-/**
- * @brief Take a mutex, waiting up to timeout_ms for another thread to give it back.
- *
- * @param[in,out] mutex       Mutex from osal_mutex_create().
- * @param[in]     timeout_ms  How long to wait. HAL_MAX_DELAY waits for ever.
- * @return OSAL_ERR_NONE, OSAL_ERR_INVALID, OSAL_ERR_TIMEOUT or OSAL_ERR_MUTEX.
- */
-static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_ms)
-{
-    osal_err_t err = OSAL_ERR_INVALID;
-
-    if (mutex != NULL)
-    {
-        err = OSAL_ERR_NONE;
-
-#if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
-        {
-            /* CMSIS-RTOS v1 waits in milliseconds, and its osWaitForever is
-               the same value as HAL_MAX_DELAY, so the timeout goes in as it is. */
-            osStatus status = osMutexWait(mutex->mutex, timeout_ms);
-
-            if ((status == osErrorTimeoutResource) || (status == osErrorResource))
-            {
-                /* Another thread kept it for the whole wait. */
-                err = OSAL_ERR_TIMEOUT;
-            }
-            else if (status != osOK)
-            {
-                /* Refused outright, such as from an interrupt. */
-                err = OSAL_ERR_MUTEX;
-            }
-            else
-            {
-                /* Taken. */
-            }
-        }
-#elif OSAL_RTOS == OSAL_RTOS_CMSIS_V2
-        {
-            uint32_t   ticks  = osWaitForever;
-            osStatus_t status = osError;
-
-            /* HAL_MAX_DELAY waits for ever. Anything else becomes ticks. */
-            if (timeout_ms != HAL_MAX_DELAY)
-            {
-                ticks = osal_ticks(timeout_ms, osKernelGetTickFreq());
-            }
-
-            status = osMutexAcquire(mutex->mutex, ticks);
-
-            if ((status == osErrorTimeout) || (status == osErrorResource))
-            {
-                /* Another thread kept it for the whole wait. */
-                err = OSAL_ERR_TIMEOUT;
-            }
-            else if (status != osOK)
-            {
-                /* Refused outright, such as from an interrupt. */
-                err = OSAL_ERR_MUTEX;
-            }
-            else
-            {
-                /* Taken. */
-            }
-        }
-#elif OSAL_RTOS == OSAL_RTOS_THREADX
-        {
-            ULONG ticks  = TX_WAIT_FOREVER;
-            UINT  status = TX_SUCCESS;
-
-            /* HAL_MAX_DELAY waits for ever. Anything else becomes ticks. */
-            if (timeout_ms != HAL_MAX_DELAY)
-            {
-                ticks = osal_ticks(timeout_ms, (uint32_t)TX_TIMER_TICKS_PER_SECOND);
-            }
-
-            status = tx_mutex_get(&mutex->mutex, ticks);
-
-            if (status == TX_NOT_AVAILABLE)
-            {
-                /* Another thread kept it for the whole wait. */
-                err = OSAL_ERR_TIMEOUT;
-            }
-            else if (status != TX_SUCCESS)
-            {
-                /* Refused outright, such as from an interrupt, or from
-                   outside a thread. */
-                err = OSAL_ERR_MUTEX;
-            }
-            else
-            {
-                /* Taken. */
-            }
-        }
-#else
-        /* Bare metal has no other thread to keep out. */
-        (void)timeout_ms;
-#endif
-    }
-
-    return err;
-}
-
-/*****************************************************************************************************/
-/**
- * @brief Give back a mutex taken with osal_mutex_lock().
- *
- * @param[in,out] mutex  Mutex from osal_mutex_create().
- */
-static inline void osal_mutex_unlock(osal_mutex_t *mutex)
-{
-    if (mutex != NULL)
-    {
-#if (OSAL_RTOS == OSAL_RTOS_CMSIS_V1) || (OSAL_RTOS == OSAL_RTOS_CMSIS_V2)
-        (void)osMutexRelease(mutex->mutex);
-#elif OSAL_RTOS == OSAL_RTOS_THREADX
-        (void)tx_mutex_put(&mutex->mutex);
-#endif
-    }
-}
-
-/*****************************************************************************************************/
-/**
- * @brief Wait at least ms milliseconds, letting other threads run when there is an RTOS.
- *
- * @param[in] ms  Milliseconds. 0 returns at once.
- */
-static inline void osal_delay_ms(uint32_t ms)
-{
-    /* 0 returns at once. Each RTOS treats a zero sleep its own way, and
-       HAL_Delay(0) waits a tick, so none of them is asked. */
-    if (ms > 0U)
-    {
-        /* With an RTOS the thread sleeps, so other threads run, for at least
-           one tick even on a tick slower than 1 ms. */
-#if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
-        /* CMSIS-RTOS v1 takes milliseconds. */
-        (void)osDelay(ms);
-#elif OSAL_RTOS == OSAL_RTOS_CMSIS_V2
-        (void)osDelay(osal_ticks(ms, osKernelGetTickFreq()));
-#elif OSAL_RTOS == OSAL_RTOS_THREADX
-        (void)tx_thread_sleep(osal_ticks(ms, (uint32_t)TX_TIMER_TICKS_PER_SECOND));
-#else
-        HAL_Delay(ms);
-#endif
-    }
-}
-
 /*
  * ****************************************************************************************************
  * Private function implementations
  * ****************************************************************************************************
 */
 
-#if (OSAL_RTOS == OSAL_RTOS_CMSIS_V2) || (OSAL_RTOS == OSAL_RTOS_THREADX)
 /*****************************************************************************************************/
 /**
- * @brief Turn milliseconds into RTOS ticks, rounding up.
+ * @brief Turn milliseconds into RTOS ticks, rounding up. Shared by the ports that count in ticks.
  *
  * @param[in] ms       Milliseconds.
  * @param[in] tick_hz  The RTOS tick rate.
@@ -365,10 +113,28 @@ static inline uint32_t osal_ticks(uint32_t ms, uint32_t tick_hz)
 
     return (uint32_t)ticks;
 }
-#endif
 
 #ifdef __cplusplus
 }
+#endif
+
+/*
+ * ****************************************************************************************************
+ * RTOS port
+ * ****************************************************************************************************
+*/
+
+/* The one port header for the chosen RTOS. It brings osal_mutex_t and the
+   functions, and the other ports are never compiled. It comes last because it
+   uses osal_err_t and osal_ticks() from above. */
+#if OSAL_RTOS == OSAL_RTOS_NONE
+#include "osal_none.h"
+#elif OSAL_RTOS == OSAL_RTOS_CMSIS_V1
+#include "osal_cmsis_v1.h"
+#elif OSAL_RTOS == OSAL_RTOS_CMSIS_V2
+#include "osal_cmsis_v2.h"
+#elif OSAL_RTOS == OSAL_RTOS_THREADX
+#include "osal_threadx.h"
 #endif
 
 #endif /* OSAL_H */

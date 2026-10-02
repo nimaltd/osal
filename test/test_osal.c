@@ -470,6 +470,18 @@ void test_a_delay_of_zero_returns_at_once(void)
     TEST_ASSERT_EQUAL_INT(0, sleeps());
 }
 
+/*****************************************************************************************************/
+/**
+ * @brief The shortest delay, 1 ms, still waits. Libraries poll with it.
+ */
+void test_a_delay_of_one_still_waits(void)
+{
+    osal_delay_ms(1U);
+
+    TEST_ASSERT_EQUAL_UINT32(1U, now_ms);
+    TEST_ASSERT_EQUAL_INT(1, sleeps());
+}
+
 #if OSAL_RTOS != OSAL_RTOS_NONE
 /*****************************************************************************************************/
 /**
@@ -572,6 +584,13 @@ void test_a_long_wait_never_becomes_forever(void)
     TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 0xFFFFFFFEU));
     TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFEU, last_wait);
     osal_mutex_unlock(&mutex);
+
+    /* At 3 kHz this is exactly 0xFFFFFFFF ticks, the "for ever" value itself. */
+    tick_hz = 3000U;
+
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 0x55555555U));
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFEU, last_wait);
+    osal_mutex_unlock(&mutex);
 }
 #endif
 
@@ -589,6 +608,7 @@ int main(void)
     RUN_TEST(test_a_mutex_locks_and_unlocks);
     RUN_TEST(test_a_delay_waits_as_long_as_asked);
     RUN_TEST(test_a_delay_of_zero_returns_at_once);
+    RUN_TEST(test_a_delay_of_one_still_waits);
 
 #if OSAL_RTOS != OSAL_RTOS_NONE
     RUN_TEST(test_a_mutex_the_rtos_cannot_make_is_reported);

@@ -33,10 +33,16 @@ see below.
    A `.clang-format` in the project root handles the mechanical parts:
 
    ```bash
-   clang-format -i src/osal.h
+   clang-format -i src/*.h
    ```
 
-4. Keep `osal.h` valid C++ as well as C, since C++ code includes it too.
+4. Keep every header in `src/` valid C++ as well as C, since C++ code includes
+   them too.
+
+5. A change to what a function does goes into all four ports, so the API stays
+   the same on every RTOS. A new RTOS is a new port header beside the others, a
+   new `OSAL_RTOS_` value in `osal.h` and `osal_config.h`, one line in the port
+   choice at the bottom of `osal.h`, and its own build in the tests and CI.
 
 ## What CI checks
 

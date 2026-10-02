@@ -8,7 +8,7 @@ A mutex and a delay for STM32 that work the same on bare metal, FreeRTOS and Thr
 
 Code written against osal does not care which RTOS the project runs, or whether it runs one at all. You choose that with one line in `osal_config.h`. The NimaLTD libraries use it for exactly this, so a driver works the same in a bare metal project and in an RTOS one.
 
-The whole library is one header, so there is nothing to compile.
+The library is headers only, so there is nothing to compile. You include `osal.h`, and it includes the one port header for your RTOS, so the others are never built.
 
 ---
 
@@ -24,9 +24,18 @@ The whole library is one header, so there is nothing to compile.
 ## 📁 Layout
 
 ```
-src/    osal.h, osal_config.h
+src/    osal.h            the one you include: it checks your setting and picks the port
+        osal_config.h     your setting
+        osal_none.h       the port for bare metal
+        osal_cmsis_v1.h   the port for FreeRTOS through CMSIS-RTOS v1
+        osal_cmsis_v2.h   the port for FreeRTOS through CMSIS-RTOS v2
+        osal_threadx.h    the port for ThreadX
 test/   host unit tests, run on a PC
 ```
+
+Each port holds the whole code for one RTOS, with no `#if` inside it, so reading
+the one your project uses tells you everything it does. A new RTOS is a new port
+header, a new `OSAL_RTOS_` value and one line in `osal.h`.
 
 Installed into a project, the code keeps its `src/` folder, with your `osal_config.h`
 beside `osal.h`, and the README, changelog and licence files around it. There is no
@@ -73,10 +82,10 @@ stm32-installer nimaltd/osal --ref v1.0.0
 
 ### Or copy the files in by hand
 
-1. Copy `src/osal.h` into your project's `Core/Inc`
+1. Copy `src/osal.h` and the four port headers, `osal_none.h`, `osal_cmsis_v1.h`, `osal_cmsis_v2.h` and `osal_threadx.h`, into your project's `Core/Inc`
 2. Copy `src/osal_config.h` into `Core/Inc`
 
-There is no `.c` file. Once you have copied `osal_config.h`, that copy is yours. The installer creates it only when it is missing, so updating the library never overwrites a setting you changed.
+Only the port your setting names is ever compiled, but keep all four, so changing the setting later needs no other file. There is no `.c` file. Once you have copied `osal_config.h`, that copy is yours. The installer creates it only when it is missing, so updating the library never overwrites a setting you changed.
 
 ### Or add the whole repository to a CMake build
 
@@ -99,12 +108,14 @@ Everything lives in your `osal_config.h`, and there is one setting, the RTOS you
 #define OSAL_RTOS           OSAL_RTOS_NONE
 ```
 
-| Value | For |
-|---|---|
-| `OSAL_RTOS_NONE` | Bare metal, no RTOS |
-| `OSAL_RTOS_CMSIS_V1` | FreeRTOS through CMSIS-RTOS v1, `cmsis_os.h` |
-| `OSAL_RTOS_CMSIS_V2` | FreeRTOS through CMSIS-RTOS v2, `cmsis_os2.h` |
-| `OSAL_RTOS_THREADX` | ThreadX, `tx_api.h` |
+| Value | For | Port |
+|---|---|---|
+| `OSAL_RTOS_NONE` | Bare metal, no RTOS | `osal_none.h` |
+| `OSAL_RTOS_CMSIS_V1` | FreeRTOS through CMSIS-RTOS v1, `cmsis_os.h` | `osal_cmsis_v1.h` |
+| `OSAL_RTOS_CMSIS_V2` | FreeRTOS through CMSIS-RTOS v2, `cmsis_os2.h` | `osal_cmsis_v2.h` |
+| `OSAL_RTOS_THREADX` | ThreadX, `tx_api.h` | `osal_threadx.h` |
+
+Always include `osal.h`, never a port header. A port included on its own, or one that is not the port your setting names, stops the build with an error that says so.
 
 In CubeMX, FreeRTOS asks which CMSIS-RTOS interface to use when you enable it. Pick the same one here.
 

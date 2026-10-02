@@ -29,9 +29,9 @@ jobs:
       - name: Install arm-none-eabi-gcc
         uses: carlosperate/arm-none-eabi-gcc-action@98c40e51546516419841748d3210c290df0d2c6c
 
-      # osal is only a header, so the test file stands in as the code that uses
+      # osal is headers only, so the test file stands in as the code that uses
       # it. It is compiled for the target once with the shipped osal_config.h,
-      # then once per RTOS, the way the tests build it.
+      # then once per RTOS, so every port is built, the way the tests build it.
       - name: Compile
         run: |
           flags="-mcpu=cortex-m4 -mthumb -std=c11 -Wall -Wextra -Wpedantic -Werror -Os"

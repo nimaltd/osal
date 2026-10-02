@@ -8,9 +8,9 @@ project(osal
 
 option(OSAL_BUILD_TESTS "Build the host unit tests" OFF)
 
-# The whole library is src/osal.h, so the target only carries its include path.
-# osal.h includes the platform main.h, and the RTOS headers when one is chosen,
-# which it does not ship: whatever links this must be able to find them.
+# The library is the headers in src/, so the target only carries their include
+# path. osal.h includes the platform main.h, and its port the RTOS header when
+# one is chosen, which it does not ship: whatever links this must find them.
 add_library(osal INTERFACE)
 add_library(nimaltd::osal ALIAS osal)
 

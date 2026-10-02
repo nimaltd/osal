@@ -33,10 +33,16 @@ requires:
 install:
   layout: mirror
 
-# The whole library is one header, so there is nothing to compile.
+# Headers only, so there is nothing to compile. osal.h stays first: the
+# installer reads the version from it. It includes the one port header that
+# osal_config.h names, so every port is copied and only one is ever built.
 files:
   headers:
     - src/osal.h
+    - src/osal_none.h
+    - src/osal_cmsis_v1.h
+    - src/osal_cmsis_v2.h
+    - src/osal_threadx.h
   sources: []
 
 # Copied only when it is not already there, so reinstalling or updating never
