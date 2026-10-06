@@ -46,7 +46,7 @@ installed copy.
 
 ## ⚙️ Installing it
 
-[stm32-installer](https://github.com/nimaltd/stm32-installer) copies the library into your project, creates your `osal_config.h`, and adds it to your CMake, STM32CubeIDE, Keil, IAR or Makefile project for you. Your project file is backed up first.
+[stm32-installer](https://github.com/nimaltd/stm32-installer) copies the library into your project, `osal_config.h` included, and adds it to your CMake, STM32CubeIDE, Keil, IAR or Makefile project for you. Your project file is backed up first.
 
 Install it once per machine:
 
@@ -72,7 +72,7 @@ Only the files the library needs are copied into your project, and the zip is le
 
 ### Updating, and pinning a version
 
-Run the same command again. The code is replaced and your `osal_config.h` is kept.
+Run the same command again. Every file is replaced, and your setting in `osal_config.h` is kept: whatever is between `USER CODE BEGIN OSAL_CONFIGURATION` and `USER CODE END OSAL_CONFIGURATION`. Anything you changed outside those lines is saved to a `.bak` file first. This needs stm32-installer 1.7.1 or newer, and an older one says to update.
 
 By default you get the newest code on `main`. To hold a project on one release, add `--ref` with a tag, a branch or a commit:
 
@@ -85,7 +85,7 @@ stm32-installer nimaltd/osal --ref v1.0.0
 1. Copy `src/osal.h` and the four port headers, `osal_none.h`, `osal_cmsis_v1.h`, `osal_cmsis_v2.h` and `osal_threadx.h`, into your project's `Core/Inc`
 2. Copy `src/osal_config.h` into `Core/Inc`
 
-Only the port your setting names is ever compiled, but keep all four, so changing the setting later needs no other file. There is no `.c` file. Once you have copied `osal_config.h`, that copy is yours. The installer creates it only when it is missing, so updating the library never overwrites a setting you changed.
+Only the port your setting names is ever compiled, but keep all four, so changing the setting later needs no other file. There is no `.c` file. Keep your setting between the `USER CODE BEGIN` and `USER CODE END` lines of `osal_config.h`. Installing later with stm32-installer keeps what is between them and replaces the rest.
 
 ### Or add the whole repository to a CMake build
 
@@ -102,7 +102,7 @@ The target is INTERFACE, since there is nothing to compile, so `osal.h` sees you
 
 ## 🔧 Configuration
 
-Everything lives in your `osal_config.h`, and there is one setting, the RTOS your project runs:
+Everything lives in your `osal_config.h`, between its `USER CODE` lines, which every install keeps. There is one setting, the RTOS your project runs:
 
 ```c
 #define OSAL_RTOS           OSAL_RTOS_NONE

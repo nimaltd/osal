@@ -17,4 +17,7 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
 - With an RTOS, it is called only from a thread once the RTOS has started,
   and the README says how to move power up work into the first thread.
 - Host unit tests, run with `python test/run_tests.py`.
+- `osal_config.h` is installed like the other files, and stm32-installer keeps
+  what is between its `USER CODE` lines. Needs stm32-installer 1.7.1 or newer;
+  an older one stops and says to update, rather than overwrite your setting.
 - CMake build, and a `library.yml` for installing with stm32-installer.
