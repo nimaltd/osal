@@ -41,9 +41,9 @@
  * ****************************************************************************************************
 */
 
-/* Checked here and never in osal_config.h. That file is the user's: it is copied
-   once and never replaced, so a check in it can be edited away and would never
-   reach anyone who installed before it was added. */
+/* Checked here and never in osal_config.h. The part of that file between its
+   USER CODE markers is the user's and survives every update, so a check in it
+   could be edited away, and one added later would never reach it. */
 
 /* The values OSAL_RTOS can take. They start at 1 on purpose: a misspelt name
    counts as 0 inside #if, and 0 is then refused below instead of quietly
