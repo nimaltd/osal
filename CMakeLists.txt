@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.16)
 project(osal
     VERSION     1.0.0
     LANGUAGES   C
-    DESCRIPTION "Mutex and delay for STM32, on bare metal, FreeRTOS or ThreadX"
+    DESCRIPTION "OS abstraction layer for STM32: the same mutex and delay on bare metal, FreeRTOS and ThreadX"
     HOMEPAGE_URL "https://github.com/nimaltd/osal")
 
 option(OSAL_BUILD_TESTS "Build the host unit tests" OFF)

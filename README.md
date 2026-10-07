@@ -4,7 +4,7 @@
 [![Stars](https://img.shields.io/github/stars/nimaltd/osal?style=social)](https://github.com/nimaltd/osal)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE.md)
 
-A mutex and a delay for STM32 that work the same on bare metal, FreeRTOS and ThreadX.
+OS abstraction layer for STM32: the same mutex and delay on bare metal, FreeRTOS and ThreadX.
 
 Code written against osal does not care which RTOS the project runs, or whether it runs one at all. You choose that with one line in `osal_config.h`. The NimaLTD libraries use it for exactly this, so a driver works the same in a bare metal project and in an RTOS one.
 

@@ -4,7 +4,7 @@
 # osal.h, so the source files are the only place it is written.
 
 name: osal
-description: Mutex and delay for STM32, on bare metal, FreeRTOS or ThreadX
+description: "OS abstraction layer for STM32: the same mutex and delay on bare metal, FreeRTOS and ThreadX"
 repository: https://github.com/nimaltd/osal
 license: Apache-2.0
 
