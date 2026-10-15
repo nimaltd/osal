@@ -1,8 +1,8 @@
 /**
  * @file        osal.h
- * @brief       OS abstraction layer for STM32: the same mutex and delay on bare metal,
- *              FreeRTOS and ThreadX.
- * @version     1.0.0
+ * @brief       OS abstraction layer for STM32: the same yield, pause, mutex and delay on
+ *              bare metal, FreeRTOS and ThreadX.
+ * @version     1.1.0
  *
  * @author      Nima Askari (NimaLTD)
  * @email       nima.askari@gmail.com

@@ -4,7 +4,7 @@
 [![Stars](https://img.shields.io/github/stars/nimaltd/osal?style=social)](https://github.com/nimaltd/osal)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE.md)
 
-OS abstraction layer for STM32: the same mutex and delay on bare metal, FreeRTOS and ThreadX.
+OS abstraction layer for STM32: the same yield, pause, mutex and delay on bare metal, FreeRTOS and ThreadX.
 
 Code written against osal does not care which RTOS the project runs, or whether it runs one at all. You choose that with one line in `osal_config.h`. The NimaLTD libraries use it for exactly this, so a driver works the same in a bare metal project and in an RTOS one.
 
@@ -14,7 +14,9 @@ The library is headers only, so there is nothing to compile. You include `osal.h
 
 ## ✨ What you get
 
-- `osal_mutex_create()`, `osal_mutex_lock()`, `osal_mutex_unlock()` and `osal_delay_ms()`, the same on every RTOS
+- `osal_yield()`, `osal_pause()`, `osal_mutex_create()`, `osal_mutex_lock()`, `osal_mutex_unlock()` and `osal_delay_ms()`, the same on every RTOS
+- A pause for a loop that waits on hardware: one tick's sleep with an RTOS, so every other thread runs, and nothing at all without one
+- A yield for a loop that keeps the CPU busy itself: the RTOS's own, and nothing without one
 - A delay that lets other threads run with an RTOS, and is `HAL_Delay()` without one
 - Mutexes with priority inheritance
 - Unit tested on every commit, once for each RTOS setting
@@ -77,7 +79,7 @@ Run the same command again. Every file is replaced, and your setting in `osal_co
 By default you get the newest code on `main`. To hold a project on one release, add `--ref` with a tag, a branch or a commit:
 
 ```bash
-stm32-installer nimaltd/osal --ref v1.0.0
+stm32-installer nimaltd/osal --ref v1.1.0
 ```
 
 ### Or copy the files in by hand
@@ -147,6 +149,21 @@ void log_line(const char *text)
 
 With an RTOS, two threads calling `log_line()` take turns at the UART, and the delay lets other threads run. Without one, the mutex costs nothing and the delay is `HAL_Delay()`.
 
+### Loops: osal_pause() and osal_yield()
+
+A loop that asks a chip or a DMA again and again until it has finished calls `osal_pause()` between the questions:
+
+```c
+while (!chip_ready())
+{
+    osal_pause();
+}
+```
+
+With an RTOS it sleeps one tick, 1 ms at the usual 1 kHz, so every other thread runs meanwhile, whatever its priority. Without one there is nothing else to run, so it returns at once and the loop asks again straight away: a 1 ms sleep there would only make a page that takes 3.2 ms to store finish at 4 ms instead.
+
+A loop that keeps the CPU busy itself, such as a read in pieces by polling, calls `osal_yield()` between the pieces. With an RTOS that is the RTOS's own yield: the threads of the same priority get a turn, and when none is waiting it costs a few microseconds, where a pause would add half a tick to every piece. It never lets a thread of lower priority run, which is why a loop that waits on hardware pauses instead: yielding through a chip erase of minutes would starve every thread below it. Without an RTOS it does nothing. The NimaLTD drivers use both this way.
+
 ### With an RTOS, start it first
 
 With an RTOS, call osal, and every library built on it, only from a thread, once the RTOS has started. Not in `main()` before `osKernelStart()` or `MX_ThreadX_Init()`: the RTOS cannot lock or sleep yet, and FreeRTOS can crash if asked to.
@@ -172,7 +189,7 @@ Bare metal has no such rule: with `OSAL_RTOS_NONE`, call it from anywhere but an
 
 - **Not from an interrupt.** A mutex cannot be taken there, and a delay would block it.
 - **Do not take a mutex twice from one thread.** FreeRTOS then waits for ever, while ThreadX counts it, so code that relies on either does not move to the other.
-- **A timeout of `HAL_MAX_DELAY` waits for ever.** Any other timeout is rounded up to whole RTOS ticks, so a short wait never becomes no wait at all.
+- **A timeout of `HAL_MAX_DELAY` waits for ever.** Any other timeout, and every delay, is rounded up to whole RTOS ticks, so a short wait never becomes no wait at all, and none is ever shorter than asked. That holds through CMSIS-RTOS v1 too, whose FreeRTOS layer would round down: on a 10 ms tick it would turn 15 ms into 10.
 - **With CMSIS-RTOS the mutex comes from the FreeRTOS heap.** `OSAL_ERR_MUTEX` from `osal_mutex_create()` almost always means the heap is too small. With ThreadX it lives inside `osal_mutex_t`, so make that static or global.
 
 ---
@@ -181,6 +198,8 @@ Bare metal has no such rule: with `OSAL_RTOS_NONE`, call it from anywhere but an
 
 | Function | What it does |
 |---|---|
+| `void osal_yield(void)` | Let the threads of the same priority run, back at once if none waits. Nothing without an RTOS |
+| `void osal_pause(void)` | Pause a loop that waits on hardware: one tick's sleep with an RTOS, nothing without one |
 | `osal_err_t osal_mutex_create(osal_mutex_t *mutex)` | Create a mutex. Call it once per mutex |
 | `osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_ms)` | Take it, waiting up to `timeout_ms` for another thread to give it back |
 | `void osal_mutex_unlock(osal_mutex_t *mutex)` | Give it back |

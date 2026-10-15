@@ -62,6 +62,7 @@ typedef enum
 static uint32_t now_ms      = 0U;
 static int      hal_delays  = 0;
 static int      rtos_sleeps = 0;
+static int      rtos_yields = 0;
 static uint32_t last_sleep  = 0U;
 
 /* Everything the fake kernel caught osal doing wrong. */
@@ -140,6 +141,15 @@ void HAL_Delay(uint32_t Delay)
 #if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
 /*****************************************************************************************************/
 /**
+ * @brief The fake kernel's tick rate, which the tests can change.
+ */
+uint32_t test_tick_frequency(void)
+{
+    return tick_hz;
+}
+
+/*****************************************************************************************************/
+/**
  * @brief Create the fake mutex, unless the test says the heap is full.
  */
 osMutexId osMutexCreate(const osMutexDef_t *mutex_def)
@@ -200,11 +210,33 @@ osStatus osMutexRelease(osMutexId mutex_id)
 
 /*****************************************************************************************************/
 /**
- * @brief Sleep, in milliseconds as CMSIS-RTOS v1 counts.
+ * @brief Let the threads of the same priority run: counted, and no time passes.
+ */
+osStatus osThreadYield(void)
+{
+    rtos_yields++;
+
+    return osOK;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Sleep, in milliseconds as CMSIS-RTOS v1 counts, turned into ticks as FreeRTOS's layer does.
+ *
+ * The milliseconds are divided by the tick period, the rest dropped, and a
+ * sleep of any length is at least one tick.
  */
 osStatus osDelay(uint32_t millisec)
 {
-    rtos_sleep(millisec, millisec);
+    uint32_t period = 1000U / tick_hz;
+    uint32_t ticks  = millisec / period;
+
+    if ((ticks == 0U) && (millisec > 0U))
+    {
+        ticks = 1U;
+    }
+
+    rtos_sleep(millisec, ticks * period);
 
     return osOK;
 }
@@ -278,6 +310,17 @@ osStatus_t osMutexAcquire(osMutexId_t mutex_id, uint32_t timeout)
 osStatus_t osMutexRelease(osMutexId_t mutex_id)
 {
     mutex_give(mutex_id == &test_mutex_object);
+
+    return osOK;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Let the threads of the same priority run: counted, and no time passes.
+ */
+osStatus_t osThreadYield(void)
+{
+    rtos_yields++;
 
     return osOK;
 }
@@ -359,6 +402,15 @@ UINT tx_mutex_put(TX_MUTEX *mutex_ptr)
 
 /*****************************************************************************************************/
 /**
+ * @brief Let the threads of the same priority run: counted, and no time passes.
+ */
+VOID tx_thread_relinquish(VOID)
+{
+    rtos_yields++;
+}
+
+/*****************************************************************************************************/
+/**
  * @brief Sleep, in ThreadX ticks.
  */
 UINT tx_thread_sleep(ULONG timer_ticks)
@@ -379,6 +431,7 @@ void setUp(void)
     now_ms             = 0U;
     hal_delays         = 0;
     rtos_sleeps        = 0;
+    rtos_yields        = 0;
     last_sleep         = 0U;
     faults             = 0;
     fault              = "none";
@@ -401,6 +454,43 @@ void setUp(void)
 void tearDown(void)
 {
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, faults, fault);
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief A yield is the RTOS's own, with no sleep, and without an RTOS it does nothing.
+ */
+void test_a_yield_is_the_rtos_yield(void)
+{
+    osal_yield();
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, sleeps(), "a yield slept");
+    TEST_ASSERT_EQUAL_UINT32(0U, now_ms);
+#if OSAL_RTOS == OSAL_RTOS_NONE
+    TEST_ASSERT_EQUAL_INT(0, hal_delays);
+#else
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, rtos_yields, "the RTOS was not asked to yield");
+#endif
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief A pause sleeps one tick with an RTOS, and returns at once without one.
+ */
+void test_a_pause_sleeps_only_with_an_rtos(void)
+{
+    osal_pause();
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, hal_delays, "spun in HAL_Delay()");
+#if OSAL_RTOS == OSAL_RTOS_NONE
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, sleeps(), "waited with no other thread to run");
+    TEST_ASSERT_EQUAL_UINT32(0U, now_ms);
+#else
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, sleeps(), "the other threads got no turn");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, rtos_yields, "yielded, which runs no lower thread");
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(1U, last_sleep, "not the shortest sleep");
+    TEST_ASSERT_EQUAL_UINT32(1U, now_ms);
+#endif
 }
 
 /*****************************************************************************************************/
@@ -594,6 +684,57 @@ void test_a_long_wait_never_becomes_forever(void)
 }
 #endif
 
+#if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
+/*****************************************************************************************************/
+/**
+ * @brief On a slow tick, waits and sleeps round up to whole ticks, never down to fewer.
+ *
+ * FreeRTOS's layer divides by the tick period and drops the rest, so 15 ms on
+ * a 10 ms tick would sleep only 10.
+ */
+void test_a_v1_slow_tick_rounds_up(void)
+{
+    tick_hz = 100U;
+
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_create(&mutex));
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 25U));
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(30U, last_wait, "25 ms at 100 Hz is 3 ticks, 30 ms");
+    osal_mutex_unlock(&mutex);
+
+    osal_delay_ms(15U);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(20U, now_ms, "slept less than asked");
+
+    osal_delay_ms(1U);
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(30U, now_ms, "1 ms at 100 Hz is still a tick");
+
+    osal_pause();
+    TEST_ASSERT_EQUAL_UINT32_MESSAGE(40U, now_ms, "a pause is one tick");
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief On a 1 kHz tick nothing is rounded, and a long finite wait never turns into "for ever".
+ */
+void test_a_v1_wait_stays_as_asked(void)
+{
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_create(&mutex));
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 0xFFFFFFFEU));
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFEU, last_wait);
+    osal_mutex_unlock(&mutex);
+
+    /* At 100 Hz, rounded up, it would pass 0xFFFFFFFF, the "for ever" value. */
+    tick_hz = 100U;
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 0xFFFFFFFEU));
+    TEST_ASSERT_EQUAL_HEX32(0xFFFFFFFEU, last_wait);
+    osal_mutex_unlock(&mutex);
+
+    /* No wait stays no wait. */
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 0U));
+    TEST_ASSERT_EQUAL_UINT32(0U, last_wait);
+    osal_mutex_unlock(&mutex);
+}
+#endif
+
 /*****************************************************************************************************/
 /**
  * @brief Run every test.
@@ -604,6 +745,8 @@ int main(void)
 {
     UNITY_BEGIN();
 
+    RUN_TEST(test_a_yield_is_the_rtos_yield);
+    RUN_TEST(test_a_pause_sleeps_only_with_an_rtos);
     RUN_TEST(test_a_null_mutex_is_refused);
     RUN_TEST(test_a_mutex_locks_and_unlocks);
     RUN_TEST(test_a_delay_waits_as_long_as_asked);
@@ -615,6 +758,11 @@ int main(void)
     RUN_TEST(test_a_mutex_held_elsewhere_times_out);
     RUN_TEST(test_a_refused_mutex_is_reported);
     RUN_TEST(test_the_mutex_wait_follows_the_timeout);
+#endif
+
+#if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
+    RUN_TEST(test_a_v1_slow_tick_rounds_up);
+    RUN_TEST(test_a_v1_wait_stays_as_asked);
 #endif
 
 #if OSAL_RTOS == OSAL_RTOS_CMSIS_V2

@@ -34,6 +34,10 @@
 
 #define osWaitForever           0xFFFFFFFFU
 
+/* The RTOS tick rate, which FreeRTOS's layer defines as configTICK_RATE_HZ. A
+   function here, so the tests can change it. */
+#define osKernelSysTickFrequency test_tick_frequency()
+
 #define osMutexDef(name)        const osMutexDef_t os_mutex_def_##name = { 0U }
 #define osMutex(name)           &os_mutex_def_##name
 
@@ -82,6 +86,12 @@ typedef struct test_os_mutex *osMutexId;
 
 /*****************************************************************************************************/
 /**
+ * @brief The tick rate the tests have set.
+ */
+uint32_t test_tick_frequency(void);
+
+/*****************************************************************************************************/
+/**
  * @brief Whether the kernel is running: 1, 0, or -1 when it cannot tell.
  */
 int32_t osKernelRunning(void);
@@ -103,6 +113,12 @@ osStatus osMutexWait(osMutexId mutex_id, uint32_t millisec);
  * @brief Give a mutex back.
  */
 osStatus osMutexRelease(osMutexId mutex_id);
+
+/*****************************************************************************************************/
+/**
+ * @brief Let the threads of the same priority run.
+ */
+osStatus osThreadYield(void);
 
 /*****************************************************************************************************/
 /**

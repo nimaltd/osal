@@ -104,6 +104,12 @@ UINT tx_mutex_put(TX_MUTEX *mutex_ptr);
 
 /*****************************************************************************************************/
 /**
+ * @brief Let the threads of the same priority run.
+ */
+VOID tx_thread_relinquish(VOID);
+
+/*****************************************************************************************************/
+/**
  * @brief Sleep for timer_ticks.
  */
 UINT tx_thread_sleep(ULONG timer_ticks);

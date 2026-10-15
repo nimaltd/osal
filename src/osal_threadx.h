@@ -1,7 +1,7 @@
 /**
  * @file        osal_threadx.h
  * @brief       The osal port for ThreadX.
- * @version     1.0.0
+ * @version     1.1.0
  *
  * @author      Nima Askari (NimaLTD)
  * @email       nima.askari@gmail.com
@@ -65,6 +65,34 @@ typedef struct
  * Public function implementations
  * ****************************************************************************************************
 */
+
+/*****************************************************************************************************/
+/**
+ * @brief Let the other threads of the same priority run, and come back at once if none is waiting.
+ *
+ * For a loop that keeps the CPU busy itself, such as a read by polling in
+ * pieces: between two pieces the threads of the same priority get a turn, and
+ * when none is waiting it costs a few microseconds. A thread of lower priority
+ * never runs, so a loop that waits on hardware calls osal_pause() instead.
+ */
+static inline void osal_yield(void)
+{
+    tx_thread_relinquish();
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Pause a loop that waits on hardware, so every other thread runs meanwhile.
+ *
+ * Sleeps one tick, 1 ms at the usual 1 kHz, the shortest sleep the RTOS has,
+ * so threads of every priority run. Call it between two questions to a chip or
+ * a DMA that is still busy. A yield would let no thread of lower priority run
+ * until the wait ends, which for an erase can be minutes.
+ */
+static inline void osal_pause(void)
+{
+    (void)tx_thread_sleep(1U);
+}
 
 /*****************************************************************************************************/
 /**

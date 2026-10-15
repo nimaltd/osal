@@ -3,6 +3,26 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-10-15
+
+### Added
+
+- `osal_yield()`, the first function in every port: with an RTOS the RTOS's
+  own yield, so the threads of the same priority get a turn in a loop that
+  keeps the CPU busy, and without one nothing.
+- `osal_pause()`, for a loop that waits on hardware: with an RTOS it sleeps
+  one tick, so every other thread runs whatever its priority, and without
+  one it returns at once, since nothing else could run and a sleep would
+  only make the wait end later.
+
+### Fixed
+
+- With CMSIS-RTOS v1, a delay or a mutex wait could be shorter than asked
+  on a tick slower than 1 ms. FreeRTOS's v1 layer divides by the tick period
+  and drops the rest, so 15 ms on a 10 ms tick slept 10. osal now rounds up
+  to whole ticks first, as the other ports always did. On the usual 1 kHz
+  tick nothing changes.
+
 ## [1.0.0] - 2026-10-01
 
 ### Added

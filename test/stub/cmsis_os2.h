@@ -127,6 +127,12 @@ osStatus_t osMutexRelease(osMutexId_t mutex_id);
 
 /*****************************************************************************************************/
 /**
+ * @brief Let the threads of the same priority run.
+ */
+osStatus_t osThreadYield(void);
+
+/*****************************************************************************************************/
+/**
  * @brief Sleep for ticks.
  */
 osStatus_t osDelay(uint32_t ticks);

@@ -1,7 +1,7 @@
 /**
  * @file        osal_none.h
  * @brief       The osal port for bare metal, with no RTOS.
- * @version     1.0.0
+ * @version     1.1.0
  *
  * @author      Nima Askari (NimaLTD)
  * @email       nima.askari@gmail.com
@@ -57,6 +57,30 @@ typedef struct
  * Public function implementations
  * ****************************************************************************************************
 */
+
+/*****************************************************************************************************/
+/**
+ * @brief Let the other threads of the same priority run, and come back at once if none is waiting.
+ *
+ * Bare metal there is no other thread, so it returns at once.
+ */
+static inline void osal_yield(void)
+{
+    /* Nothing else could run. */
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Pause a loop that waits on hardware, so every other thread runs meanwhile.
+ *
+ * Bare metal it returns at once, and the caller asks the hardware again
+ * straight away: nothing else could run meanwhile, so a sleep would only make
+ * the wait end later.
+ */
+static inline void osal_pause(void)
+{
+    /* Nothing else could run meanwhile. */
+}
 
 /*****************************************************************************************************/
 /**
