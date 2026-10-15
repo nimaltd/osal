@@ -59,4 +59,22 @@ void HAL_Delay(uint32_t Delay);
  */
 uint32_t __get_IPSR(void);
 
+/*****************************************************************************************************/
+/**
+ * @brief PRIMASK, 1 while every interrupt is masked, from the tests' fake CPU.
+ */
+uint32_t __get_PRIMASK(void);
+
+/*****************************************************************************************************/
+/**
+ * @brief Set PRIMASK on the tests' fake CPU.
+ */
+void __set_PRIMASK(uint32_t priMask);
+
+/*****************************************************************************************************/
+/**
+ * @brief Mask every interrupt on the tests' fake CPU.
+ */
+void __disable_irq(void);
+
 #endif /* MAIN_H */

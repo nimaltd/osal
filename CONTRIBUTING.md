@@ -23,8 +23,9 @@ see below.
    python test/run_tests.py
    ```
 
-   This builds and runs the suite four times, once with the shipped
-   `osal_config.h` and once for each RTOS.
+   This builds and runs the suite five times: once with the shipped
+   `osal_config.h`, once for each RTOS, and once more for CMSIS-RTOS v1 as
+   CubeMX most often sets it up, with no static allocation and 7 priorities.
 
 3. Match the existing code style. The short version: 4 spaces and no tabs, Allman
    braces, `snake_case`, every name prefixed with `osal_`, a short Doxygen block
@@ -48,7 +49,7 @@ see below.
 
 Every pull request runs two jobs, and both must be green:
 
-- the full test suite on Ubuntu, in all four builds, with `-Wall -Wextra -Wpedantic -Werror`
+- the full test suite on Ubuntu, in all five builds, with `-Wall -Wextra -Wpedantic -Werror`
 - a cross compile for Cortex-M4 with the same warning settings, once per build
 
 Warnings are errors, so a build that warns will not merge.

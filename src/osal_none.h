@@ -1,7 +1,7 @@
 /**
  * @file        osal_none.h
  * @brief       The osal port for bare metal, with no RTOS.
- * @version     1.1.0
+ * @version     1.2.0
  *
  * @author      Nima Askari (NimaLTD)
  * @email       nima.askari@gmail.com
@@ -23,6 +23,14 @@
 
 /*
  * ****************************************************************************************************
+ * Includes
+ * ****************************************************************************************************
+*/
+
+#include <stdlib.h>
+
+/*
+ * ****************************************************************************************************
  * Configuration checks
  * ****************************************************************************************************
 */
@@ -35,6 +43,16 @@
 extern "C"
 {
 #endif
+
+/*
+ * ****************************************************************************************************
+ * Macros
+ * ****************************************************************************************************
+*/
+
+/* No task runs without an RTOS, so there is one priority and no stack. */
+#define OSAL_TASK_PRIORITY_MAX  0U
+#define OSAL_TASK_STACK_MIN     0U
 
 /*
  * ****************************************************************************************************
@@ -51,6 +69,16 @@ typedef struct
     uint8_t unused; /**< Bare metal needs none, and C wants a member. */
 
 } osal_mutex_t;
+
+/*****************************************************************************************************/
+/**
+ * @brief A task. Bare metal has none, and osal_task_create() says so.
+ */
+typedef struct
+{
+    uint8_t unused; /**< C wants a member. */
+
+} osal_task_t;
 
 /*
  * ****************************************************************************************************
@@ -80,6 +108,37 @@ static inline void osal_yield(void)
 static inline void osal_pause(void)
 {
     /* Nothing else could run meanwhile. */
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Mask the interrupts, so nothing else runs until osal_critical_exit().
+ *
+ * Works in a task, in an interrupt and before the RTOS starts, and nests: each
+ * osal_critical_exit() puts back what its osal_critical_enter() found.
+ *
+ * @return What to give osal_critical_exit().
+ */
+static inline uint32_t osal_critical_enter(void)
+{
+    /* PRIMASK masks every interrupt. Kept first, so an inner exit leaves the
+       interrupts masked for the outer one. */
+    uint32_t state = __get_PRIMASK();
+
+    __disable_irq();
+
+    return state;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Put the interrupts back as osal_critical_enter() found them.
+ *
+ * @param[in] state  What osal_critical_enter() returned.
+ */
+static inline void osal_critical_exit(uint32_t state)
+{
+    __set_PRIMASK(state);
 }
 
 /*****************************************************************************************************/
@@ -189,6 +248,107 @@ static inline void osal_delay_ms(uint32_t ms)
     {
         /* 0 returns at once, since HAL_Delay(0) still waits a tick. */
     }
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Take memory from the heap, the C library's here.
+ *
+ * @param[in] size  Bytes. 0 gives NULL.
+ * @return The memory, or NULL when there is not enough, or from an interrupt.
+ */
+static inline void *osal_malloc(size_t size)
+{
+    void *memory = NULL;
+
+    /* Not from an interrupt: the code it cut into may be inside malloc(). */
+    if ((size > 0U) && !osal_in_interrupt())
+    {
+        memory = malloc(size);
+    }
+
+    return memory;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Give memory from osal_malloc() back.
+ *
+ * @param[in] memory  Memory from osal_malloc(). NULL does nothing, and so does a call from an interrupt.
+ */
+static inline void osal_free(void *memory)
+{
+    if ((memory != NULL) && !osal_in_interrupt())
+    {
+        free(memory);
+    }
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Create a task and start it. Bare metal has no task, so it is refused.
+ *
+ * @param[out] task        Task to create.
+ * @param[in]  name        Name, for a debugger.
+ * @param[in]  function    What the task runs.
+ * @param[in]  argument    Given to function.
+ * @param[in]  stack_size  Stack in bytes.
+ * @param[in]  priority    0, the only one.
+ * @return OSAL_ERR_INVALID for a NULL task or function, and OSAL_ERR_TASK otherwise.
+ */
+static inline osal_err_t osal_task_create(osal_task_t *task, const char *name, osal_task_func_t function,
+                                          void *argument, uint32_t stack_size, uint32_t priority)
+{
+    osal_err_t err = OSAL_ERR_INVALID;
+
+    (void)name;
+    (void)argument;
+    (void)stack_size;
+    (void)priority;
+
+    if ((task != NULL) && (function != NULL))
+    {
+        /* No RTOS to run it. */
+        err = OSAL_ERR_TASK;
+    }
+
+    return err;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Delete a task. Bare metal has none.
+ *
+ * @param[in,out] task  Task from osal_task_create().
+ * @return OSAL_ERR_INVALID for a NULL task, and OSAL_ERR_TASK otherwise.
+ */
+static inline osal_err_t osal_task_delete(osal_task_t *task)
+{
+    return (task != NULL) ? OSAL_ERR_TASK : OSAL_ERR_INVALID;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Suspend a task. Bare metal has none.
+ *
+ * @param[in,out] task  Task from osal_task_create().
+ * @return OSAL_ERR_INVALID for a NULL task, and OSAL_ERR_TASK otherwise.
+ */
+static inline osal_err_t osal_task_suspend(osal_task_t *task)
+{
+    return (task != NULL) ? OSAL_ERR_TASK : OSAL_ERR_INVALID;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Resume a task. Bare metal has none.
+ *
+ * @param[in,out] task  Task from osal_task_create().
+ * @return OSAL_ERR_INVALID for a NULL task, and OSAL_ERR_TASK otherwise.
+ */
+static inline osal_err_t osal_task_resume(osal_task_t *task)
+{
+    return (task != NULL) ? OSAL_ERR_TASK : OSAL_ERR_INVALID;
 }
 
 #ifdef __cplusplus

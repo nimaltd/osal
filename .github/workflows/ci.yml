@@ -41,3 +41,7 @@ jobs:
             arm-none-eabi-gcc -c test/test_osal.c -o /tmp/osal_$rtos.o $inc $flags \
               -DOSAL_CONFIG_H -DOSAL_RTOS=OSAL_RTOS_$rtos
           done
+          # CMSIS-RTOS v1 as CubeMX most often sets it up, as the tests build it too.
+          arm-none-eabi-gcc -c test/test_osal.c -o /tmp/osal_cmsis_v1_dynamic.o $inc $flags \
+            -DOSAL_CONFIG_H -DOSAL_RTOS=OSAL_RTOS_CMSIS_V1 \
+            -DconfigSUPPORT_STATIC_ALLOCATION=0 -DconfigMAX_PRIORITIES=7

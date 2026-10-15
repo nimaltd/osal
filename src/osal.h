@@ -1,8 +1,8 @@
 /**
  * @file        osal.h
- * @brief       OS abstraction layer for STM32: the same yield, pause, mutex and delay on
- *              bare metal, FreeRTOS and ThreadX.
- * @version     1.1.0
+ * @brief       OS abstraction layer for STM32: the same tasks, mutexes, critical sections,
+ *              delays and heap on bare metal, FreeRTOS and ThreadX.
+ * @version     1.2.0
  *
  * @author      Nima Askari (NimaLTD)
  * @email       nima.askari@gmail.com
@@ -18,10 +18,13 @@
  * @note        The only osal file to include. It reads OSAL_RTOS from
  *              osal_config.h and includes the one port header for that RTOS.
  *              Every port behaves the same. With an RTOS, call it from a
- *              thread once the RTOS has started. Never call it from a
- *              critical section: a lock or a delay there is not refused, and
- *              cannot work with interrupts masked. From an interrupt a mutex
- *              is refused and nothing waits.
+ *              task once the RTOS has started. A task, the heap and a
+ *              critical section may also be used before, where the RTOS
+ *              creates its first tasks. Inside a critical section call only
+ *              osal_critical_enter() and osal_critical_exit(): a lock or a
+ *              delay there is not refused, and cannot work with interrupts
+ *              masked. From an interrupt a mutex, a task and the heap are
+ *              refused and nothing waits. A critical section works there.
  */
 
 #ifndef OSAL_H
@@ -78,16 +81,23 @@ extern "C"
 
 /*****************************************************************************************************/
 /**
- * @brief Error values returned by the mutex functions.
+ * @brief Error values returned by osal.
  */
 typedef enum
 {
-    OSAL_ERR_NONE    = 0, /**< Done.                                              */
-    OSAL_ERR_INVALID = 1, /**< A NULL mutex.                                      */
-    OSAL_ERR_TIMEOUT = 2, /**< Another thread kept the mutex for the whole wait.  */
-    OSAL_ERR_MUTEX   = 3, /**< The RTOS could not create or take the mutex.       */
+    OSAL_ERR_NONE    = 0, /**< Done.                                                 */
+    OSAL_ERR_INVALID = 1, /**< A NULL mutex or task, or a value out of range.        */
+    OSAL_ERR_TIMEOUT = 2, /**< Another task kept the mutex for the whole wait.       */
+    OSAL_ERR_MUTEX   = 3, /**< The RTOS could not create or take the mutex.          */
+    OSAL_ERR_TASK    = 4, /**< The RTOS could not create the task, or act on it.     */
 
 } osal_err_t;
+
+/*****************************************************************************************************/
+/**
+ * @brief The function a task runs. It may return, and the task then stops for good.
+ */
+typedef void (*osal_task_func_t)(void *argument);
 
 /*
  * ****************************************************************************************************
@@ -100,9 +110,9 @@ typedef enum
  * @brief Whether the CPU is in an interrupt handler, or any other exception. Shared by every port.
  *
  * Every osal call asks it first, so from an interrupt each behaves the same on
- * every port: a mutex is refused, and nothing waits. The RTOSes differ there:
- * FreeRTOS's CMSIS-RTOS v1 layer would take a mutex from an interrupt, and
- * sleep in one, which fails.
+ * every port: a mutex, a task and the heap are refused, and nothing waits. The
+ * RTOSes differ there: FreeRTOS's CMSIS-RTOS v1 layer would take a mutex from
+ * an interrupt, and sleep in one, which fails.
  *
  * @return true in an exception, false in thread mode.
  */
@@ -123,9 +133,10 @@ static inline bool osal_in_interrupt(void)
  * ****************************************************************************************************
 */
 
-/* The one port header for the chosen RTOS. It brings osal_mutex_t and the
-   functions, and the other ports are never compiled. It comes last because it
-   uses osal_err_t and osal_in_interrupt() from above. */
+/* The one port header for the chosen RTOS. It brings osal_mutex_t,
+   osal_task_t, OSAL_TASK_PRIORITY_MAX, OSAL_TASK_STACK_MIN and the functions,
+   and the other ports are never compiled. It comes last because it uses
+   osal_err_t, osal_task_func_t and osal_in_interrupt() from above. */
 #if OSAL_RTOS == OSAL_RTOS_NONE
 #include "osal_none.h"
 #elif OSAL_RTOS == OSAL_RTOS_CMSIS_V1

@@ -3,6 +3,45 @@
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-10-15
+
+### Added
+
+- Tasks: `osal_task_create()`, `osal_task_delete()`, `osal_task_suspend()`
+  and `osal_task_resume()`, with `osal_task_t` and the task function type
+  `osal_task_func_t`. The stack size is in bytes on every RTOS, and the
+  stack and control block come from the RTOS's heap. The priority runs from
+  0, the lowest, to `OSAL_TASK_PRIORITY_MAX`, which comes from the RTOS:
+  `configMAX_PRIORITIES - 1` with CMSIS-RTOS v1, `osPriorityRealtime7` with
+  CMSIS-RTOS v2, `TX_MAX_PRIORITIES - 1` with ThreadX, whose order osal
+  turns round. `OSAL_TASK_STACK_MIN` is the RTOS's smallest stack. Bare
+  metal has no task, and says so with `OSAL_ERR_TASK`.
+- Every task behaves the same on every port:
+  - A task whose function returns stops for good, where FreeRTOS would
+    stop the CPU. A task that deletes itself stops the same way. Either
+    keeps its memory until another task deletes it, since ThreadX cannot
+    free a task from inside it.
+  - A second `osal_task_create()` on a task that exists is refused, so the
+    task is never lost.
+  - Tasks of the same priority take turns every tick, as FreeRTOS's do: on
+    ThreadX each has a one tick time slice and no preemption threshold.
+  - With FreeRTOS the scheduler is held while a task is created, so a new
+    task of higher priority finds its `osal_task_t` filled in.
+- A critical section: `osal_critical_enter()` and `osal_critical_exit()`,
+  the RTOS's own. It works in a task, in an interrupt and before the RTOS
+  starts, and nests. Before the start FreeRTOS's own would leave the
+  interrupts masked until the RTOS starts, so osal keeps and puts back the
+  mask there, as every other port does.
+- A heap: `osal_malloc()` and `osal_free()`. FreeRTOS's heap, the first
+  ThreadX byte pool created, which in a CubeMX project is its own, or the C
+  library's on bare metal. 0 bytes gives `NULL`, and nothing waits for
+  memory.
+- `OSAL_ERR_TASK`.
+- With FreeRTOS, osal stops the build unless `configSUPPORT_DYNAMIC_ALLOCATION`
+  is 1, CubeMX's default. Mutexes always needed it.
+- A test build of CMSIS-RTOS v1 as CubeMX most often sets it up, with no
+  static allocation and 7 priorities.
+
 ## [1.1.0] - 2026-10-15
 
 ### Added

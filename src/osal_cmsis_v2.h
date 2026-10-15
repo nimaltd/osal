@@ -1,7 +1,7 @@
 /**
  * @file        osal_cmsis_v2.h
  * @brief       The osal port for FreeRTOS through CMSIS-RTOS v2.
- * @version     1.1.0
+ * @version     1.2.0
  *
  * @author      Nima Askari (NimaLTD)
  * @email       nima.askari@gmail.com
@@ -19,7 +19,8 @@
  *              milliseconds become ticks through FreeRTOS's own
  *              pdMS_TO_TICKS(), which a project can define its own way in
  *              FreeRTOSConfig.h. The mutex is FreeRTOS's recursive one, as a
- *              ThreadX mutex is.
+ *              ThreadX mutex is. A task and the heap come from the FreeRTOS
+ *              heap, and a critical section is FreeRTOS's own.
  */
 
 #ifndef OSAL_CMSIS_V2_H
@@ -31,8 +32,11 @@
  * ****************************************************************************************************
 */
 
+#include <string.h>
+
 #include "FreeRTOS.h"
 #include "cmsis_os2.h"
+#include "task.h"
 
 /*
  * ****************************************************************************************************
@@ -50,10 +54,34 @@
 #error "osal needs configUSE_RECURSIVE_MUTEXES 1: in CubeMX, FreeRTOS, Config parameters, USE_RECURSIVE_MUTEXES Enabled"
 #endif
 
+/* osal takes every mutex and task from the FreeRTOS heap. Without it, the
+   CMSIS-RTOS v2 layer makes neither, and osal_mutex_create() and
+   osal_task_create() would fail. FreeRTOS.h makes it 1 when FreeRTOSConfig.h
+   leaves it out. */
+#if (configSUPPORT_DYNAMIC_ALLOCATION != 1)
+#error "osal needs configSUPPORT_DYNAMIC_ALLOCATION 1: in CubeMX, FreeRTOS, Config parameters, Memory Allocation Dynamic"
+#endif
+
 #ifdef __cplusplus
 extern "C"
 {
 #endif
+
+/*
+ * ****************************************************************************************************
+ * Macros
+ * ****************************************************************************************************
+*/
+
+/* The highest task priority. CMSIS-RTOS v2 numbers a task's priority from
+   osPriorityIdle to osPriorityRealtime7, and ST's layer hands that number to
+   FreeRTOS as it is. osal's 0 is osPriorityIdle, so its highest is
+   osPriorityRealtime7, FreeRTOS's highest. osPriorityISR above it is the
+   RTOS's own. */
+#define OSAL_TASK_PRIORITY_MAX  ((uint32_t)osPriorityRealtime7 - (uint32_t)osPriorityIdle)
+
+/* The smallest stack in bytes: FreeRTOS's own, its idle task's. */
+#define OSAL_TASK_STACK_MIN     ((uint32_t)configMINIMAL_STACK_SIZE * (uint32_t)sizeof(StackType_t))
 
 /*
  * ****************************************************************************************************
@@ -71,6 +99,18 @@ typedef struct
 
 } osal_mutex_t;
 
+/*****************************************************************************************************/
+/**
+ * @brief A task. Make it static or global: it lasts as long as the task does.
+ */
+typedef struct
+{
+    osThreadId_t     thread;    /**< The RTOS task, NULL while there is none. */
+    osal_task_func_t function;  /**< What the task runs.                      */
+    void             *argument; /**< Given to function.                       */
+
+} osal_task_t;
+
 /*
  * ****************************************************************************************************
  * Private function prototypes
@@ -78,6 +118,8 @@ typedef struct
 */
 
 static inline uint32_t osal_ticks(uint32_t ms);
+static inline bool     osal_in_task(void);
+static inline void     osal_task_run(void *argument);
 
 /*
  * ****************************************************************************************************
@@ -116,6 +158,58 @@ static inline void osal_pause(void)
     if (!osal_in_interrupt())
     {
         (void)osDelay(1U);
+    }
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Mask the interrupts, so nothing else runs until osal_critical_exit().
+ *
+ * Works in a task, in an interrupt and before the RTOS starts, and nests: each
+ * osal_critical_exit() puts back what its osal_critical_enter() found. FreeRTOS
+ * masks the interrupts up to configMAX_SYSCALL_INTERRUPT_PRIORITY, as it always
+ * does. Those above it never call the RTOS, and never call osal either.
+ *
+ * @return What to give osal_critical_exit().
+ */
+static inline uint32_t osal_critical_enter(void)
+{
+    uint32_t state = 0U;
+
+    if (osal_in_task())
+    {
+        /* FreeRTOS's own. It counts how deep it is, so an RTOS call made
+           inside, with a critical section of its own, leaves the interrupts
+           masked on its way out. */
+        taskENTER_CRITICAL();
+    }
+    else
+    {
+        /* An interrupt, or before the RTOS starts: the mask is kept and put
+           back. Before the start FreeRTOS's count would leave the interrupts
+           masked until the RTOS starts, where every other port gives them
+           back. */
+        state = (uint32_t)taskENTER_CRITICAL_FROM_ISR();
+    }
+
+    return state;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Put the interrupts back as osal_critical_enter() found them.
+ *
+ * @param[in] state  What osal_critical_enter() returned.
+ */
+static inline void osal_critical_exit(uint32_t state)
+{
+    if (osal_in_task())
+    {
+        taskEXIT_CRITICAL();
+    }
+    else
+    {
+        taskEXIT_CRITICAL_FROM_ISR((UBaseType_t)state);
     }
 }
 
@@ -263,6 +357,212 @@ static inline void osal_delay_ms(uint32_t ms)
     }
 }
 
+/*****************************************************************************************************/
+/**
+ * @brief Take memory from the FreeRTOS heap.
+ *
+ * @param[in] size  Bytes. 0 gives NULL.
+ * @return The memory, or NULL when the heap has not enough, or from an interrupt.
+ */
+static inline void *osal_malloc(size_t size)
+{
+    void *memory = NULL;
+
+    /* FreeRTOS's heap is not for an interrupt. */
+    if ((size > 0U) && !osal_in_interrupt())
+    {
+        memory = pvPortMalloc(size);
+    }
+
+    return memory;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Give memory from osal_malloc() back.
+ *
+ * @param[in] memory  Memory from osal_malloc(). NULL does nothing, and so does a call from an interrupt.
+ */
+static inline void osal_free(void *memory)
+{
+    if ((memory != NULL) && !osal_in_interrupt())
+    {
+        vPortFree(memory);
+    }
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Create a task and start it, its stack and control block from the FreeRTOS heap.
+ *
+ * The task runs function(argument). If function returns, the task stops for
+ * good, as one that deletes itself does, and keeps its memory until another
+ * task deletes it.
+ *
+ * @param[out] task        Task to create, static or global. One that has a task already is refused.
+ * @param[in]  name        Name, for a debugger. NULL gives "osal".
+ * @param[in]  function    What the task runs.
+ * @param[in]  argument    Given to function.
+ * @param[in]  stack_size  Stack in bytes, OSAL_TASK_STACK_MIN at least.
+ * @param[in]  priority    0, the lowest, to OSAL_TASK_PRIORITY_MAX, the highest.
+ * @return OSAL_ERR_NONE, OSAL_ERR_INVALID or OSAL_ERR_TASK.
+ */
+static inline osal_err_t osal_task_create(osal_task_t *task, const char *name, osal_task_func_t function,
+                                          void *argument, uint32_t stack_size, uint32_t priority)
+{
+    osal_err_t err = OSAL_ERR_INVALID;
+
+    /* ST's layer gives FreeRTOS the stack in words, in 16 bits. */
+    if ((task == NULL) || (function == NULL) || (priority > OSAL_TASK_PRIORITY_MAX) ||
+        (stack_size < OSAL_TASK_STACK_MIN) || ((stack_size / sizeof(StackType_t)) > 0xFFFFU))
+    {
+        /* Refused before the RTOS sees it. */
+    }
+    else if (osal_in_interrupt() || (task->thread != NULL))
+    {
+        /* FreeRTOS makes no task in an interrupt, and the task this one
+           already has would be lost. */
+        err = OSAL_ERR_TASK;
+    }
+    else
+    {
+        osThreadAttr_t attr;
+        int32_t        lock = 0;
+
+        /* Zeroed, so no control block or stack is given, and ST's layer
+           takes both from the heap. */
+        (void)memset(&attr, 0, sizeof(attr));
+
+        attr.name       = (name != NULL) ? name : "osal";
+        attr.stack_size = stack_size;
+        attr.priority   = (osPriority_t)((uint32_t)osPriorityIdle + priority);
+
+        /* The new task may have the higher priority and run at once. The
+           scheduler waits until osal_task_t is filled in, so the task finds
+           itself there. Only a lock taken here is let go: ST's
+           osKernelRestoreLock() would lock a second time a scheduler that
+           was locked already. Before the start there is no lock to take, and
+           no task runs. */
+        lock           = osKernelLock();
+        task->function = function;
+        task->argument = argument;
+        task->thread   = osThreadNew(osal_task_run, task, &attr);
+
+        if (lock == 0)
+        {
+            (void)osKernelUnlock();
+        }
+
+        /* NULL most often means the FreeRTOS heap is too small. */
+        err = (task->thread != NULL) ? OSAL_ERR_NONE : OSAL_ERR_TASK;
+    }
+
+    return err;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Delete a task. One that deletes itself stops for good, and keeps its memory.
+ *
+ * From another task, the task ends at once and its memory goes back to the
+ * heap. A task that deletes itself never returns from here, and its memory
+ * stays taken until another task deletes it, since ThreadX cannot free a task
+ * from inside it. Never delete a task that holds a mutex.
+ *
+ * @param[in,out] task  Task from osal_task_create().
+ * @return OSAL_ERR_NONE, OSAL_ERR_INVALID, or OSAL_ERR_TASK for no task, or from an interrupt.
+ */
+static inline osal_err_t osal_task_delete(osal_task_t *task)
+{
+    osal_err_t err = OSAL_ERR_INVALID;
+
+    if ((task != NULL) && (osal_in_interrupt() || (task->thread == NULL)))
+    {
+        /* No task, or a call from an interrupt. */
+        err = OSAL_ERR_TASK;
+    }
+    else if ((task != NULL) && (task->thread == osThreadGetId()))
+    {
+        /* Itself. FreeRTOS would free it later from its idle task, and
+           ThreadX cannot at all, so on every port it only stops. Never
+           returns. */
+        osal_delay_ms(HAL_MAX_DELAY);
+    }
+    else if (task != NULL)
+    {
+        err = (osThreadTerminate(task->thread) == osOK) ? OSAL_ERR_NONE : OSAL_ERR_TASK;
+
+        if (err == OSAL_ERR_NONE)
+        {
+            /* Gone, so a second delete is refused, and the task can be
+               created again. */
+            task->thread = NULL;
+        }
+    }
+    else
+    {
+        /* A NULL task. */
+    }
+
+    return err;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Suspend a task until osal_task_resume(). A task may suspend itself.
+ *
+ * @param[in,out] task  Task from osal_task_create().
+ * @return OSAL_ERR_NONE, OSAL_ERR_INVALID, or OSAL_ERR_TASK for no task, or from an interrupt.
+ */
+static inline osal_err_t osal_task_suspend(osal_task_t *task)
+{
+    osal_err_t err = OSAL_ERR_INVALID;
+
+    if ((task != NULL) && (osal_in_interrupt() || (task->thread == NULL)))
+    {
+        /* No task, or a call from an interrupt. */
+        err = OSAL_ERR_TASK;
+    }
+    else if (task != NULL)
+    {
+        err = (osThreadSuspend(task->thread) == osOK) ? OSAL_ERR_NONE : OSAL_ERR_TASK;
+    }
+    else
+    {
+        /* A NULL task. */
+    }
+
+    return err;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Resume a task suspended with osal_task_suspend(). Any other task is left as it is.
+ *
+ * @param[in,out] task  Task from osal_task_create().
+ * @return OSAL_ERR_NONE, OSAL_ERR_INVALID, or OSAL_ERR_TASK for no task, or from an interrupt.
+ */
+static inline osal_err_t osal_task_resume(osal_task_t *task)
+{
+    osal_err_t err = OSAL_ERR_INVALID;
+
+    if ((task != NULL) && (osal_in_interrupt() || (task->thread == NULL)))
+    {
+        /* No task, or a call from an interrupt. */
+        err = OSAL_ERR_TASK;
+    }
+    else if (task != NULL)
+    {
+        err = (osThreadResume(task->thread) == osOK) ? OSAL_ERR_NONE : OSAL_ERR_TASK;
+    }
+    else
+    {
+        /* A NULL task. */
+    }
+
+    return err;
+}
+
 /*
  * ****************************************************************************************************
  * Private function implementations
@@ -289,6 +589,46 @@ static inline uint32_t osal_ticks(uint32_t ms)
     }
 
     return ticks;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Whether a task runs, with the RTOS started, where FreeRTOS's own critical section works.
+ *
+ * @return false in an interrupt, and before the RTOS starts.
+ */
+static inline bool osal_in_task(void)
+{
+    bool in_task = false;
+
+    if (!osal_in_interrupt())
+    {
+        osKernelState_t state = osKernelGetState();
+
+        /* Locked is running, with the scheduler held. Before the start it is
+           inactive or ready. */
+        in_task = (state == osKernelRunning) || (state == osKernelLocked);
+    }
+
+    return in_task;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Where every task starts. It runs the task's function, and stops the task for good if it returns.
+ *
+ * @param[in] argument  The task's osal_task_t.
+ */
+static inline void osal_task_run(void *argument)
+{
+    const osal_task_t *task = (const osal_task_t *)argument;
+
+    task->function(task->argument);
+
+    /* Returned. FreeRTOS would stop the CPU here and ThreadX ends the task,
+       so on every port it stops for good, and keeps its memory until another
+       task deletes it. */
+    osal_delay_ms(HAL_MAX_DELAY);
 }
 
 #ifdef __cplusplus
