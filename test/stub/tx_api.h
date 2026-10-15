@@ -84,6 +84,12 @@ UINT tx_mutex_create(TX_MUTEX *mutex_ptr, CHAR *name_ptr, UINT inherit);
 
 /*****************************************************************************************************/
 /**
+ * @brief Delete a mutex.
+ */
+UINT tx_mutex_delete(TX_MUTEX *mutex_ptr);
+
+/*****************************************************************************************************/
+/**
  * @brief Take a mutex, waiting up to wait_option ticks.
  */
 UINT tx_mutex_get(TX_MUTEX *mutex_ptr, ULONG wait_option);

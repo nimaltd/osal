@@ -11,7 +11,8 @@
  *              SPDX-License-Identifier: Apache-2.0
  *              See LICENSE.md in the project root for the full license text.
  *
- * @note        Only what osal uses, with the real names and values. The
+ * @note        Only what osal uses, with the real names and values, and the
+ *              recursive mutex calls ST adds to the standard ones. The
  *              functions are implemented by the tests, over a fake kernel.
  */
 
@@ -25,6 +26,8 @@
 */
 
 #include <stdint.h>
+
+#include "FreeRTOS.h"
 
 /*
  * ****************************************************************************************************
@@ -82,21 +85,21 @@ typedef struct test_os_mutex *osMutexId;
 
 /*****************************************************************************************************/
 /**
- * @brief Create a mutex.
+ * @brief Create a recursive mutex. ST's own call, beside the standard ones.
  */
-osMutexId osMutexCreate(const osMutexDef_t *mutex_def);
+osMutexId osRecursiveMutexCreate(const osMutexDef_t *mutex_def);
 
 /*****************************************************************************************************/
 /**
- * @brief Take a mutex, waiting up to millisec.
+ * @brief Take a recursive mutex, waiting up to millisec. osErrorOS when it was not had.
  */
-osStatus osMutexWait(osMutexId mutex_id, uint32_t millisec);
+osStatus osRecursiveMutexWait(osMutexId mutex_id, uint32_t millisec);
 
 /*****************************************************************************************************/
 /**
- * @brief Give a mutex back.
+ * @brief Give a recursive mutex back.
  */
-osStatus osMutexRelease(osMutexId mutex_id);
+osStatus osRecursiveMutexRelease(osMutexId mutex_id);
 
 /*****************************************************************************************************/
 /**

@@ -84,20 +84,29 @@ static inline void osal_pause(void)
 
 /*****************************************************************************************************/
 /**
- * @brief Create a mutex. Call it once per mutex.
+ * @brief Create a mutex. A second call on the same one gives it back as new.
  *
  * @param[out] mutex  Mutex to create.
- * @return OSAL_ERR_NONE or OSAL_ERR_INVALID.
+ * @return OSAL_ERR_NONE, OSAL_ERR_INVALID, or OSAL_ERR_MUTEX from an interrupt.
  */
 static inline osal_err_t osal_mutex_create(osal_mutex_t *mutex)
 {
     osal_err_t err = OSAL_ERR_INVALID;
 
-    if (mutex != NULL)
+    if ((mutex != NULL) && osal_in_interrupt())
+    {
+        /* Refused, as every RTOS port refuses it. */
+        err = OSAL_ERR_MUTEX;
+    }
+    else if (mutex != NULL)
     {
         /* Bare metal has no other thread to keep out. */
         mutex->unused = 0U;
         err           = OSAL_ERR_NONE;
+    }
+    else
+    {
+        /* A NULL mutex. */
     }
 
     return err;
@@ -107,9 +116,12 @@ static inline osal_err_t osal_mutex_create(osal_mutex_t *mutex)
 /**
  * @brief Take a mutex, waiting up to timeout_ms for another thread to give it back.
  *
+ * The thread that holds it may take it again, and gives it back once for each
+ * time it took it.
+ *
  * @param[in,out] mutex       Mutex from osal_mutex_create().
- * @param[in]     timeout_ms  How long to wait. HAL_MAX_DELAY waits for ever.
- * @return OSAL_ERR_NONE or OSAL_ERR_INVALID.
+ * @param[in]     timeout_ms  How long to wait. 0 tries once, and HAL_MAX_DELAY waits for ever.
+ * @return OSAL_ERR_NONE, OSAL_ERR_INVALID, or OSAL_ERR_MUTEX from an interrupt.
  */
 static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_ms)
 {
@@ -118,9 +130,18 @@ static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_m
     /* Bare metal has no other thread to keep out, so there is never a wait. */
     (void)timeout_ms;
 
-    if (mutex != NULL)
+    if ((mutex != NULL) && osal_in_interrupt())
+    {
+        /* Refused, as every RTOS port refuses it. */
+        err = OSAL_ERR_MUTEX;
+    }
+    else if (mutex != NULL)
     {
         err = OSAL_ERR_NONE;
+    }
+    else
+    {
+        /* A NULL mutex. */
     }
 
     return err;
@@ -143,10 +164,15 @@ static inline void osal_mutex_unlock(osal_mutex_t *mutex)
  * @brief Wait ms milliseconds.
  *
  * @param[in] ms  Milliseconds. 0 returns at once, and HAL_MAX_DELAY never returns.
+ *                From an interrupt it returns at once, as on every RTOS port.
  */
 static inline void osal_delay_ms(uint32_t ms)
 {
-    if (ms == HAL_MAX_DELAY)
+    if (osal_in_interrupt())
+    {
+        /* No wait in an interrupt: an RTOS cannot sleep there either. */
+    }
+    else if (ms == HAL_MAX_DELAY)
     {
         /* For ever, as HAL_MAX_DELAY is for a mutex. HAL_Delay() itself ends
            after 49 days, so it waits again. */

@@ -27,6 +27,23 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   v1 is given milliseconds as before.
 - `osal_delay_ms(HAL_MAX_DELAY)` waits for ever, as `HAL_MAX_DELAY` does for
   a mutex, and never returns. In 1.0.0 it ended after about 49 days.
+- Every port behaves the same where the RTOSes differ:
+  - A thread may take a mutex it already holds, and gives it back as often.
+    With FreeRTOS the mutex is now its recursive one, which needs
+    `configUSE_RECURSIVE_MUTEXES 1`, CubeMX's default. osal stops the build
+    where it is off. ThreadX mutexes always were recursive.
+  - From an interrupt, creating or taking a mutex returns `OSAL_ERR_MUTEX`,
+    giving one back does nothing, and no delay, pause or yield waits, bare
+    metal included. FreeRTOS's CMSIS-RTOS v1 layer took a mutex in an
+    interrupt and slept in one.
+  - A second `osal_mutex_create()` on the same mutex gives a new mutex.
+    ThreadX refused it, and now the old one is deleted first.
+
+### Fixed
+
+- With CMSIS-RTOS v1, a mutex another thread kept for the whole wait was
+  reported as `OSAL_ERR_MUTEX`. ST's layer says `osErrorOS` for it, which osal
+  read as a refusal. It is `OSAL_ERR_TIMEOUT` now, as on every other port.
 
 ## [1.0.0] - 2026-10-01
 

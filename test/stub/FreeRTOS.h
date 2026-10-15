@@ -1,6 +1,6 @@
 /**
  * @file        FreeRTOS.h
- * @brief       Host stub for the part of FreeRTOS.h osal uses through CMSIS-RTOS v2.
+ * @brief       Host stub for the part of FreeRTOS.h osal uses through CMSIS-RTOS.
  * @version     1.1.0
  *
  * @author      Nima Askari (NimaLTD)
@@ -35,6 +35,9 @@
 /* The tick rate, a function here so the tests can change it. In a project it
    is FreeRTOSConfig.h's configTICK_RATE_HZ. */
 #define configTICK_RATE_HZ          test_tick_rate()
+
+/* CubeMX's default, which osal needs. */
+#define configUSE_RECURSIVE_MUTEXES 1
 
 /* Milliseconds to ticks, the rest of a tick dropped. A project may define its
    own in FreeRTOSConfig.h, so FreeRTOS only defines it when there is none. */

@@ -75,11 +75,15 @@ static int      sleeps_to_escape = 0;
 static int        faults = 0;
 static const char *fault = "none";
 
+/* The exception the CPU is in, 0 in thread mode. */
+static uint32_t ipsr = 0U;
+
 /* The fake kernel. */
 static uint32_t tick_hz            = 1000U;
 static take_t   take_result        = TAKE_OK;
 static bool     mutex_create_fails = false;
 static int      mutex_creates      = 0;
+static int      mutex_deletes      = 0;
 static int      mutex_takes        = 0;
 static int      mutex_gives        = 0;
 static int      mutex_held         = 0;
@@ -130,6 +134,17 @@ uint32_t HAL_GetTick(void)
 
 /*****************************************************************************************************/
 /**
+ * @brief The exception the tests say the CPU is in.
+ *
+ * @return 0 in thread mode, an exception number in an interrupt.
+ */
+uint32_t __get_IPSR(void)
+{
+    return ipsr;
+}
+
+/*****************************************************************************************************/
+/**
  * @brief Wait, by moving the clock on.
  *
  * @param[in] Delay  Milliseconds.
@@ -150,9 +165,9 @@ void HAL_Delay(uint32_t Delay)
 #if OSAL_RTOS == OSAL_RTOS_CMSIS_V1
 /*****************************************************************************************************/
 /**
- * @brief Create the fake mutex, unless the test says the heap is full.
+ * @brief Create the fake recursive mutex, unless the test says the heap is full.
  */
-osMutexId osMutexCreate(const osMutexDef_t *mutex_def)
+osMutexId osRecursiveMutexCreate(const osMutexDef_t *mutex_def)
 {
     osMutexId id = NULL;
 
@@ -169,9 +184,12 @@ osMutexId osMutexCreate(const osMutexDef_t *mutex_def)
 
 /*****************************************************************************************************/
 /**
- * @brief Take the fake mutex, answering as the test chose.
+ * @brief Take the fake recursive mutex, answering as the test chose, with the values ST's layer gives.
+ *
+ * ST's osRecursiveMutexWait() says osErrorOS for a mutex held the whole wait,
+ * and osErrorParameter for one never created.
  */
-osStatus osMutexWait(osMutexId mutex_id, uint32_t millisec)
+osStatus osRecursiveMutexWait(osMutexId mutex_id, uint32_t millisec)
 {
     osStatus status = osErrorOS;
 
@@ -182,15 +200,12 @@ osStatus osMutexWait(osMutexId mutex_id, uint32_t millisec)
             break;
 
         case TAKE_TIMEOUT:
-            status = osErrorTimeoutResource;
-            break;
-
         case TAKE_BUSY:
-            status = osErrorResource;
+            status = osErrorOS;
             break;
 
         default:
-            status = osErrorISR;
+            status = osErrorParameter;
             break;
     }
 
@@ -199,9 +214,9 @@ osStatus osMutexWait(osMutexId mutex_id, uint32_t millisec)
 
 /*****************************************************************************************************/
 /**
- * @brief Give the fake mutex back.
+ * @brief Give the fake recursive mutex back.
  */
-osStatus osMutexRelease(osMutexId mutex_id)
+osStatus osRecursiveMutexRelease(osMutexId mutex_id)
 {
     mutex_give(mutex_id == &test_mutex_object);
 
@@ -263,6 +278,11 @@ osMutexId_t osMutexNew(const osMutexAttr_t *attr)
     if ((attr == NULL) || ((attr->attr_bits & osMutexPrioInherit) == 0U))
     {
         note_fault("the mutex was made without priority inheritance");
+    }
+
+    if ((attr == NULL) || ((attr->attr_bits & osMutexRecursive) == 0U))
+    {
+        note_fault("the mutex was made without recursion, so it would not behave as ThreadX's");
     }
 
     if (!mutex_create_fails)
@@ -361,14 +381,35 @@ UINT tx_mutex_create(TX_MUTEX *mutex_ptr, CHAR *name_ptr, UINT inherit)
         note_fault("the mutex was made without priority inheritance");
     }
 
-    if (!mutex_create_fails)
+    if (mutex_ptr->tx_mutex_id != 0U)
+    {
+        /* Already created, which ThreadX refuses with the same error. */
+        status = TX_MUTEX_ERROR;
+    }
+    else if (!mutex_create_fails)
     {
         mutex_ptr->tx_mutex_id    = 1U;
         mutex_ptr->tx_mutex_count = 0U;
         status                    = TX_SUCCESS;
     }
+    else
+    {
+        /* The test says it cannot be made. */
+    }
 
     return status;
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief Delete the fake mutex.
+ */
+UINT tx_mutex_delete(TX_MUTEX *mutex_ptr)
+{
+    mutex_deletes++;
+    mutex_ptr->tx_mutex_id = 0U;
+
+    return TX_SUCCESS;
 }
 
 /*****************************************************************************************************/
@@ -448,6 +489,8 @@ void setUp(void)
     take_result        = TAKE_OK;
     mutex_create_fails = false;
     mutex_creates      = 0;
+    mutex_deletes      = 0;
+    ipsr               = 0U;
     mutex_takes        = 0;
     mutex_gives        = 0;
     mutex_held         = 0;
@@ -500,6 +543,65 @@ void test_a_pause_sleeps_only_with_an_rtos(void)
     TEST_ASSERT_EQUAL_INT_MESSAGE(0, rtos_yields, "yielded, which runs no lower thread");
     TEST_ASSERT_EQUAL_UINT32_MESSAGE(1U, last_sleep, "not the shortest sleep");
     TEST_ASSERT_EQUAL_UINT32(1U, now_ms);
+#endif
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief From an interrupt, every port refuses a mutex and waits for nothing, with no RTOS call.
+ */
+void test_an_interrupt_gets_the_same_on_every_port(void)
+{
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_create(&mutex));
+
+    /* SysTick, say. */
+    ipsr = 15U;
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_MUTEX, osal_mutex_create(&mutex));
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_MUTEX, osal_mutex_lock(&mutex, 10U));
+    osal_mutex_unlock(&mutex);
+    osal_delay_ms(10U);
+    osal_delay_ms(HAL_MAX_DELAY);
+    osal_pause();
+    osal_yield();
+
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, sleeps(), "waited in an interrupt");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, rtos_yields, "yielded in an interrupt");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, mutex_takes, "took a mutex in an interrupt");
+    TEST_ASSERT_EQUAL_INT_MESSAGE(0, mutex_gives, "gave a mutex back in an interrupt");
+    TEST_ASSERT_EQUAL_UINT32(0U, now_ms);
+#if OSAL_RTOS != OSAL_RTOS_NONE
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, mutex_creates, "made a mutex in an interrupt");
+#endif
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief The thread that holds a mutex may take it again, and gives it back as often, on every port.
+ */
+void test_a_mutex_may_be_taken_again_by_its_holder(void)
+{
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_create(&mutex));
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 0U));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 0U), "refused its own holder");
+    osal_mutex_unlock(&mutex);
+    osal_mutex_unlock(&mutex);
+
+    TEST_ASSERT_EQUAL_INT(mutex_takes, mutex_gives);
+    TEST_ASSERT_EQUAL_INT(0, mutex_held);
+}
+
+/*****************************************************************************************************/
+/**
+ * @brief A second create on the same mutex works on every port, and gives a new mutex.
+ */
+void test_a_second_create_gives_a_new_mutex(void)
+{
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_create(&mutex));
+    TEST_ASSERT_EQUAL_INT_MESSAGE(OSAL_ERR_NONE, osal_mutex_create(&mutex), "refused a second create");
+    TEST_ASSERT_EQUAL_INT(OSAL_ERR_NONE, osal_mutex_lock(&mutex, 10U));
+    osal_mutex_unlock(&mutex);
+#if OSAL_RTOS == OSAL_RTOS_THREADX
+    TEST_ASSERT_EQUAL_INT_MESSAGE(1, mutex_deletes, "the old ThreadX mutex was not deleted first");
 #endif
 }
 
@@ -739,6 +841,9 @@ int main(void)
 
     RUN_TEST(test_a_yield_is_the_rtos_yield);
     RUN_TEST(test_a_pause_sleeps_only_with_an_rtos);
+    RUN_TEST(test_an_interrupt_gets_the_same_on_every_port);
+    RUN_TEST(test_a_mutex_may_be_taken_again_by_its_holder);
+    RUN_TEST(test_a_second_create_gives_a_new_mutex);
     RUN_TEST(test_a_null_mutex_is_refused);
     RUN_TEST(test_a_mutex_locks_and_unlocks);
     RUN_TEST(test_a_delay_waits_as_long_as_asked);

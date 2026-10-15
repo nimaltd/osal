@@ -17,8 +17,11 @@
  *
  * @note        The only osal file to include. It reads OSAL_RTOS from
  *              osal_config.h and includes the one port header for that RTOS.
- *              Not for use from an interrupt, and with an RTOS, only from a
- *              thread once the RTOS has started.
+ *              Every port behaves the same. With an RTOS, call it from a
+ *              thread once the RTOS has started. Never call it from a
+ *              critical section: a lock or a delay there is not refused, and
+ *              cannot work with interrupts masked. From an interrupt a mutex
+ *              is refused and nothing waits.
  */
 
 #ifndef OSAL_H
@@ -30,6 +33,7 @@
  * ****************************************************************************************************
 */
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -85,6 +89,30 @@ typedef enum
 
 } osal_err_t;
 
+/*
+ * ****************************************************************************************************
+ * Private function implementations
+ * ****************************************************************************************************
+*/
+
+/*****************************************************************************************************/
+/**
+ * @brief Whether the CPU is in an interrupt handler, or any other exception. Shared by every port.
+ *
+ * Every osal call asks it first, so from an interrupt each behaves the same on
+ * every port: a mutex is refused, and nothing waits. The RTOSes differ there:
+ * FreeRTOS's CMSIS-RTOS v1 layer would take a mutex from an interrupt, and
+ * sleep in one, which fails.
+ *
+ * @return true in an exception, false in thread mode.
+ */
+static inline bool osal_in_interrupt(void)
+{
+    /* IPSR holds the number of the exception running, and 0 in thread mode.
+       __get_IPSR() comes with the CMSIS core header main.h brings in. */
+    return (__get_IPSR() != 0U);
+}
+
 #ifdef __cplusplus
 }
 #endif
@@ -97,7 +125,7 @@ typedef enum
 
 /* The one port header for the chosen RTOS. It brings osal_mutex_t and the
    functions, and the other ports are never compiled. It comes last because it
-   uses osal_err_t from above. */
+   uses osal_err_t and osal_in_interrupt() from above. */
 #if OSAL_RTOS == OSAL_RTOS_NONE
 #include "osal_none.h"
 #elif OSAL_RTOS == OSAL_RTOS_CMSIS_V1

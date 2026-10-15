@@ -53,4 +53,10 @@ uint32_t HAL_GetTick(void);
  */
 void HAL_Delay(uint32_t Delay);
 
+/*****************************************************************************************************/
+/**
+ * @brief The exception running, 0 in thread mode, as the tests set it. CMSIS core gives the real one.
+ */
+uint32_t __get_IPSR(void);
+
 #endif /* MAIN_H */

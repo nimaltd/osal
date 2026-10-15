@@ -33,6 +33,7 @@
 */
 
 #define osWaitForever           0xFFFFFFFFU
+#define osMutexRecursive        0x00000001U
 #define osMutexPrioInherit      0x00000002U
 
 /*

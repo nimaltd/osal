@@ -18,7 +18,8 @@ The library is headers only, so there is nothing to compile. You include `osal.h
 - A pause for a loop that waits on hardware: one tick's sleep with an RTOS, so every other thread runs, and nothing at all without one
 - A yield for a loop that keeps the CPU busy itself: the RTOS's own, and nothing without one
 - A delay that lets other threads run with an RTOS, and is `HAL_Delay()` without one
-- Mutexes with priority inheritance
+- Mutexes with priority inheritance, recursive on every RTOS
+- The same behaviour on every port, down to a mutex created twice, taken twice, or asked for from an interrupt
 - Unit tested on every commit, once for each RTOS setting
 
 ---
@@ -183,12 +184,15 @@ void StartDefaultTask(void *argument)
 }
 ```
 
-Bare metal has no such rule: with `OSAL_RTOS_NONE`, call it from anywhere but an interrupt.
+Bare metal has no such rule: with `OSAL_RTOS_NONE` there is no RTOS to start first.
 
 ### Things to know
 
-- **Not from an interrupt.** A mutex cannot be taken there, and a delay would block it.
-- **Do not take a mutex twice from one thread.** FreeRTOS then waits for ever, while ThreadX counts it, so code that relies on either does not move to the other.
+- **Every port behaves the same.** Where the RTOSes differ, osal decides, so code moves between them, and to bare metal, unchanged.
+- **From an interrupt nothing waits.** `osal_mutex_create()` and `osal_mutex_lock()` return `OSAL_ERR_MUTEX`, `osal_mutex_unlock()` does nothing, and `osal_delay_ms()`, `osal_pause()` and `osal_yield()` return at once. On bare metal too, where a mutex taken in an interrupt would protect nothing.
+- **Never call osal from a critical section.** osal tells an interrupt from the CPU's exception state alone, as ST's CMSIS-RTOS v2 layer does, and a thread inside `taskENTER_CRITICAL()` or `__disable_irq()` does not set that. So a mutex lock or a delay there is not refused, and cannot work either: with interrupts masked no thread can switch and the tick stops. A delay returns at once and the thread only sleeps when the critical section ends, a lock on a mutex another thread holds can hang the CPU, and bare metal's `HAL_Delay()` never ends. Take the mutex and wait outside the critical section.
+- **A thread may take a mutex it already holds.** Every port counts it, and the thread gives it back once for each time it took it. With FreeRTOS that needs `configUSE_RECURSIVE_MUTEXES 1`, CubeMX's default, and osal stops the build with a message where it is off.
+- **A second `osal_mutex_create()` on the same mutex gives a new one.** With FreeRTOS the first one's memory is not given back, so call it once per mutex.
 - **`HAL_MAX_DELAY` waits for ever.** A mutex lock with it waits until the mutex is free, and `osal_delay_ms(HAL_MAX_DELAY)` never returns.
 - **Every other time becomes ticks the RTOS's own way.** CMSIS-RTOS v1 takes milliseconds and turns them into ticks itself. Through CMSIS-RTOS v2, osal uses FreeRTOS's `pdMS_TO_TICKS()`, so one your `FreeRTOSConfig.h` defines its own way is the one used. ThreadX has no such macro, only `TX_TIMER_TICKS_PER_SECOND`, so osal does the same sum with it. Each drops what is left of a tick: on a 100 Hz tick, 25 ms waits 20. On the usual 1 kHz tick nothing changes, and a time under one tick still waits one, never none.
 - **With CMSIS-RTOS the mutex comes from the FreeRTOS heap.** `OSAL_ERR_MUTEX` from `osal_mutex_create()` almost always means the heap is too small. With ThreadX it lives inside `osal_mutex_t`, so make that static or global.

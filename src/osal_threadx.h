@@ -88,7 +88,10 @@ static inline ULONG osal_ticks(uint32_t ms);
  */
 static inline void osal_yield(void)
 {
-    tx_thread_relinquish();
+    if (!osal_in_interrupt())
+    {
+        tx_thread_relinquish();
+    }
 }
 
 /*****************************************************************************************************/
@@ -102,31 +105,54 @@ static inline void osal_yield(void)
  */
 static inline void osal_pause(void)
 {
-    (void)tx_thread_sleep(1U);
+    if (!osal_in_interrupt())
+    {
+        (void)tx_thread_sleep(1U);
+    }
 }
 
 /*****************************************************************************************************/
 /**
- * @brief Create a mutex. Call it once per mutex.
+ * @brief Create a mutex. A second call on the same one gives it back as new.
  *
  * @param[out] mutex  Mutex to create.
  * @return OSAL_ERR_NONE, OSAL_ERR_INVALID or OSAL_ERR_MUTEX.
  */
 static inline osal_err_t osal_mutex_create(osal_mutex_t *mutex)
 {
-    osal_err_t err = OSAL_ERR_INVALID;
+    osal_err_t err    = OSAL_ERR_INVALID;
+    UINT       status = TX_SUCCESS;
 
-    if (mutex != NULL)
+    if ((mutex != NULL) && osal_in_interrupt())
     {
-        err = OSAL_ERR_NONE;
-
+        /* ThreadX makes no mutex in an interrupt. */
+        err = OSAL_ERR_MUTEX;
+    }
+    else if (mutex != NULL)
+    {
         /* Inside osal_mutex_t, so no heap is needed. Priority inheritance, so
            a low priority thread holding the mutex is not held up by a medium
-           one while a high priority thread waits for it. */
-        if (tx_mutex_create(&mutex->mutex, (CHAR *)"osal", TX_INHERIT) != TX_SUCCESS)
+           one while a high priority thread waits for it. A ThreadX mutex is
+           recursive by nature. */
+        status = tx_mutex_create(&mutex->mutex, (CHAR *)"osal", TX_INHERIT);
+
+        if (status == TX_MUTEX_ERROR)
         {
-            err = OSAL_ERR_MUTEX;
+            /* Already created. FreeRTOS makes a new mutex each time, so here
+               the old one goes and a new one takes its place. */
+            status = tx_mutex_delete(&mutex->mutex);
+
+            if (status == TX_SUCCESS)
+            {
+                status = tx_mutex_create(&mutex->mutex, (CHAR *)"osal", TX_INHERIT);
+            }
         }
+
+        err = (status == TX_SUCCESS) ? OSAL_ERR_NONE : OSAL_ERR_MUTEX;
+    }
+    else
+    {
+        /* A NULL mutex. */
     }
 
     return err;
@@ -136,15 +162,23 @@ static inline osal_err_t osal_mutex_create(osal_mutex_t *mutex)
 /**
  * @brief Take a mutex, waiting up to timeout_ms for another thread to give it back.
  *
+ * The thread that holds it may take it again, and gives it back once for each
+ * time it took it.
+ *
  * @param[in,out] mutex       Mutex from osal_mutex_create().
- * @param[in]     timeout_ms  How long to wait. HAL_MAX_DELAY waits for ever.
+ * @param[in]     timeout_ms  How long to wait. 0 tries once, and HAL_MAX_DELAY waits for ever.
  * @return OSAL_ERR_NONE, OSAL_ERR_INVALID, OSAL_ERR_TIMEOUT or OSAL_ERR_MUTEX.
  */
 static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_ms)
 {
     osal_err_t err = OSAL_ERR_INVALID;
 
-    if (mutex != NULL)
+    if ((mutex != NULL) && osal_in_interrupt())
+    {
+        /* No mutex in an interrupt. */
+        err = OSAL_ERR_MUTEX;
+    }
+    else if (mutex != NULL)
     {
         ULONG ticks  = TX_WAIT_FOREVER;
         UINT  status = TX_SUCCESS;
@@ -169,10 +203,13 @@ static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_m
         }
         else
         {
-            /* Refused outright, such as from an interrupt, or from outside a
-               thread. */
+            /* A mutex never created, or a call from outside a thread. */
             err = OSAL_ERR_MUTEX;
         }
+    }
+    else
+    {
+        /* A NULL mutex. */
     }
 
     return err;
@@ -186,7 +223,7 @@ static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_m
  */
 static inline void osal_mutex_unlock(osal_mutex_t *mutex)
 {
-    if (mutex != NULL)
+    if ((mutex != NULL) && !osal_in_interrupt())
     {
         (void)tx_mutex_put(&mutex->mutex);
     }
@@ -197,10 +234,15 @@ static inline void osal_mutex_unlock(osal_mutex_t *mutex)
  * @brief Wait ms milliseconds, letting other threads run.
  *
  * @param[in] ms  Milliseconds. 0 returns at once, and HAL_MAX_DELAY never returns.
+ *                From an interrupt it returns at once, as on every port.
  */
 static inline void osal_delay_ms(uint32_t ms)
 {
-    if (ms == HAL_MAX_DELAY)
+    if (osal_in_interrupt())
+    {
+        /* No sleep in an interrupt. */
+    }
+    else if (ms == HAL_MAX_DELAY)
     {
         /* For ever, as HAL_MAX_DELAY is for a mutex. ThreadX has no sleep
            without end, and its longest ends after 49 days at 1 kHz, so the
