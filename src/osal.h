@@ -85,36 +85,6 @@ typedef enum
 
 } osal_err_t;
 
-/*
- * ****************************************************************************************************
- * Private function implementations
- * ****************************************************************************************************
-*/
-
-/*****************************************************************************************************/
-/**
- * @brief Turn milliseconds into RTOS ticks, rounding up. Shared by the ports that count in ticks.
- *
- * @param[in] ms       Milliseconds.
- * @param[in] tick_hz  The RTOS tick rate.
- * @return The number of ticks.
- */
-static inline uint32_t osal_ticks(uint32_t ms, uint32_t tick_hz)
-{
-    /* Rounded up, so a short wait does not become no wait at all on a slow
-       tick. 64 bits, so a long wait cannot overflow on the way. */
-    uint64_t ticks = (((uint64_t)ms * tick_hz) + 999U) / 1000U;
-
-    /* One short of the RTOS's "wait for ever", so a long finite timeout
-       cannot turn into an endless one. */
-    if (ticks > 0xFFFFFFFEU)
-    {
-        ticks = 0xFFFFFFFEU;
-    }
-
-    return (uint32_t)ticks;
-}
-
 #ifdef __cplusplus
 }
 #endif
@@ -127,7 +97,7 @@ static inline uint32_t osal_ticks(uint32_t ms, uint32_t tick_hz)
 
 /* The one port header for the chosen RTOS. It brings osal_mutex_t and the
    functions, and the other ports are never compiled. It comes last because it
-   uses osal_err_t and osal_ticks() from above. */
+   uses osal_err_t from above. */
 #if OSAL_RTOS == OSAL_RTOS_NONE
 #include "osal_none.h"
 #elif OSAL_RTOS == OSAL_RTOS_CMSIS_V1

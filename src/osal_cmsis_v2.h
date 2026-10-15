@@ -15,7 +15,10 @@
  *              See LICENSE.md in the project root for the full license text.
  *
  * @note        Included by osal.h when OSAL_RTOS is OSAL_RTOS_CMSIS_V2. Include
- *              osal.h, never this file.
+ *              osal.h, never this file. CMSIS-RTOS v2 takes ticks, and
+ *              milliseconds become ticks through FreeRTOS's own
+ *              pdMS_TO_TICKS(), which a project can define its own way in
+ *              FreeRTOSConfig.h.
  */
 
 #ifndef OSAL_CMSIS_V2_H
@@ -27,6 +30,7 @@
  * ****************************************************************************************************
 */
 
+#include "FreeRTOS.h"
 #include "cmsis_os2.h"
 
 /*
@@ -59,6 +63,14 @@ typedef struct
     osMutexId_t mutex; /**< The RTOS mutex. */
 
 } osal_mutex_t;
+
+/*
+ * ****************************************************************************************************
+ * Private function prototypes
+ * ****************************************************************************************************
+*/
+
+static inline uint32_t osal_ticks(uint32_t ms);
 
 /*
  * ****************************************************************************************************
@@ -145,7 +157,7 @@ static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_m
         /* HAL_MAX_DELAY waits for ever. Anything else becomes ticks. */
         if (timeout_ms != HAL_MAX_DELAY)
         {
-            ticks = osal_ticks(timeout_ms, osKernelGetTickFreq());
+            ticks = osal_ticks(timeout_ms);
         }
 
         status = osMutexAcquire(mutex->mutex, ticks);
@@ -186,19 +198,57 @@ static inline void osal_mutex_unlock(osal_mutex_t *mutex)
 
 /*****************************************************************************************************/
 /**
- * @brief Wait at least ms milliseconds, letting other threads run.
+ * @brief Wait ms milliseconds, letting other threads run.
  *
- * @param[in] ms  Milliseconds. 0 returns at once.
+ * @param[in] ms  Milliseconds. 0 returns at once, and HAL_MAX_DELAY never returns.
  */
 static inline void osal_delay_ms(uint32_t ms)
 {
-    /* 0 returns at once, since a zero sleep is not the same on every RTOS.
-       Anything else sleeps the thread, so other threads run, for at least one
-       tick even on a tick slower than 1 ms. */
-    if (ms > 0U)
+    if (ms == HAL_MAX_DELAY)
     {
-        (void)osDelay(osal_ticks(ms, osKernelGetTickFreq()));
+        /* For ever, as HAL_MAX_DELAY is for a mutex. One sleep, even the
+           longest, ends after 49 days, so the thread sleeps again. */
+        for (;;)
+        {
+            (void)osDelay(osWaitForever);
+        }
     }
+    else if (ms > 0U)
+    {
+        (void)osDelay(osal_ticks(ms));
+    }
+    else
+    {
+        /* 0 returns at once, since a zero sleep is not the same on every RTOS. */
+    }
+}
+
+/*
+ * ****************************************************************************************************
+ * Private function implementations
+ * ****************************************************************************************************
+*/
+
+/*****************************************************************************************************/
+/**
+ * @brief Turn milliseconds into ticks with FreeRTOS's pdMS_TO_TICKS(), and never a wait into none.
+ *
+ * @param[in] ms  Milliseconds.
+ * @return Ticks: what pdMS_TO_TICKS() gives, and at least one for any wait.
+ */
+static inline uint32_t osal_ticks(uint32_t ms)
+{
+    uint32_t ticks = (uint32_t)pdMS_TO_TICKS(ms);
+
+    /* pdMS_TO_TICKS() drops what is left of a tick, so on a 100 Hz tick 5 ms
+       is no tick at all, and a sleep or a mutex wait would end at once. A
+       wait that was asked for gets one tick at least. */
+    if ((ticks == 0U) && (ms > 0U))
+    {
+        ticks = 1U;
+    }
+
+    return ticks;
 }
 
 #ifdef __cplusplus

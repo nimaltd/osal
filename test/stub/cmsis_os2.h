@@ -59,19 +59,6 @@ typedef enum
 
 /*****************************************************************************************************/
 /**
- * @brief Kernel states, with the values CMSIS-RTOS v2 gives them.
- */
-typedef enum
-{
-    osKernelInactive = 0,
-    osKernelReady    = 1,
-    osKernelRunning  = 2,
-    osKernelLocked   = 3,
-
-} osKernelState_t;
-
-/*****************************************************************************************************/
-/**
  * @brief Mutex handle.
  */
 typedef void *osMutexId_t;
@@ -94,18 +81,6 @@ typedef struct
  * Public function prototypes
  * ****************************************************************************************************
 */
-
-/*****************************************************************************************************/
-/**
- * @brief The kernel's state.
- */
-osKernelState_t osKernelGetState(void);
-
-/*****************************************************************************************************/
-/**
- * @brief Kernel ticks per second.
- */
-uint32_t osKernelGetTickFreq(void);
 
 /*****************************************************************************************************/
 /**

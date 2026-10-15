@@ -25,7 +25,6 @@
 */
 
 #define VOID                        void
-#define TX_NULL                     ((void *)0)
 
 #define TX_SUCCESS                  ((UINT)0x00)
 #define TX_WAIT_ERROR               ((UINT)0x04)
@@ -36,12 +35,9 @@
 #define TX_INHERIT                  ((UINT)1)
 #define TX_WAIT_FOREVER             ((ULONG)0xFFFFFFFFUL)
 
-/* 1000, a common STM32 setting. ThreadX's own default is 100, and a slow tick
-   like that is tested in the CMSIS-RTOS v2 build, where the tests can change
-   the rate at run time. Both go through the same conversion in osal.h. */
-#ifndef TX_TIMER_TICKS_PER_SECOND
-#define TX_TIMER_TICKS_PER_SECOND   ((ULONG)1000)
-#endif
+/* The tick rate, a function here so the tests can change it. In a project it
+   is a number in tx_user.h or tx_port.h, 100 unless set. */
+#define TX_TIMER_TICKS_PER_SECOND   ((ULONG)test_tick_rate())
 
 /*
  * ****************************************************************************************************
@@ -68,21 +64,17 @@ typedef struct
 
 } TX_MUTEX;
 
-/*****************************************************************************************************/
-/**
- * @brief A thread. Only ever pointed at.
- */
-typedef struct
-{
-    ULONG tx_thread_id;
-
-} TX_THREAD;
-
 /*
  * ****************************************************************************************************
  * Public function prototypes
  * ****************************************************************************************************
 */
+
+/*****************************************************************************************************/
+/**
+ * @brief The tick rate the tests have set.
+ */
+unsigned long test_tick_rate(void);
 
 /*****************************************************************************************************/
 /**
@@ -113,11 +105,5 @@ VOID tx_thread_relinquish(VOID);
  * @brief Sleep for timer_ticks.
  */
 UINT tx_thread_sleep(ULONG timer_ticks);
-
-/*****************************************************************************************************/
-/**
- * @brief The calling thread, or TX_NULL outside any thread.
- */
-TX_THREAD *tx_thread_identify(VOID);
 
 #endif /* TX_API_H */

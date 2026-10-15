@@ -15,7 +15,10 @@
  *              See LICENSE.md in the project root for the full license text.
  *
  * @note        Included by osal.h when OSAL_RTOS is OSAL_RTOS_THREADX. Include
- *              osal.h, never this file.
+ *              osal.h, never this file. ThreadX takes ticks, and has no macro
+ *              of its own to turn milliseconds into them, only its tick rate,
+ *              TX_TIMER_TICKS_PER_SECOND. So osal does the sum FreeRTOS's
+ *              pdMS_TO_TICKS() does.
  */
 
 #ifndef OSAL_THREADX_H
@@ -62,6 +65,14 @@ typedef struct
 
 /*
  * ****************************************************************************************************
+ * Private function prototypes
+ * ****************************************************************************************************
+*/
+
+static inline ULONG osal_ticks(uint32_t ms);
+
+/*
+ * ****************************************************************************************************
  * Public function implementations
  * ****************************************************************************************************
 */
@@ -84,10 +95,10 @@ static inline void osal_yield(void)
 /**
  * @brief Pause a loop that waits on hardware, so every other thread runs meanwhile.
  *
- * Sleeps one tick, 1 ms at the usual 1 kHz, the shortest sleep the RTOS has,
- * so threads of every priority run. Call it between two questions to a chip or
- * a DMA that is still busy. A yield would let no thread of lower priority run
- * until the wait ends, which for an erase can be minutes.
+ * Sleeps one tick, the shortest sleep the RTOS has, so threads of every
+ * priority run. Call it between two questions to a chip or a DMA that is still
+ * busy. A yield would let no thread of lower priority run until the wait ends,
+ * which for an erase can be minutes.
  */
 static inline void osal_pause(void)
 {
@@ -141,7 +152,7 @@ static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_m
         /* HAL_MAX_DELAY waits for ever. Anything else becomes ticks. */
         if (timeout_ms != HAL_MAX_DELAY)
         {
-            ticks = osal_ticks(timeout_ms, (uint32_t)TX_TIMER_TICKS_PER_SECOND);
+            ticks = osal_ticks(timeout_ms);
         }
 
         status = tx_mutex_get(&mutex->mutex, ticks);
@@ -183,19 +194,58 @@ static inline void osal_mutex_unlock(osal_mutex_t *mutex)
 
 /*****************************************************************************************************/
 /**
- * @brief Wait at least ms milliseconds, letting other threads run.
+ * @brief Wait ms milliseconds, letting other threads run.
  *
- * @param[in] ms  Milliseconds. 0 returns at once.
+ * @param[in] ms  Milliseconds. 0 returns at once, and HAL_MAX_DELAY never returns.
  */
 static inline void osal_delay_ms(uint32_t ms)
 {
-    /* 0 returns at once, since a zero sleep is not the same on every RTOS.
-       Anything else sleeps the thread, so other threads run, for at least one
-       tick even on a tick slower than 1 ms. */
-    if (ms > 0U)
+    if (ms == HAL_MAX_DELAY)
     {
-        (void)tx_thread_sleep(osal_ticks(ms, (uint32_t)TX_TIMER_TICKS_PER_SECOND));
+        /* For ever, as HAL_MAX_DELAY is for a mutex. ThreadX has no sleep
+           without end, and its longest ends after 49 days at 1 kHz, so the
+           thread sleeps again. */
+        for (;;)
+        {
+            (void)tx_thread_sleep(TX_WAIT_FOREVER);
+        }
     }
+    else if (ms > 0U)
+    {
+        (void)tx_thread_sleep(osal_ticks(ms));
+    }
+    else
+    {
+        /* 0 returns at once, since a zero sleep is not the same on every RTOS. */
+    }
+}
+
+/*
+ * ****************************************************************************************************
+ * Private function implementations
+ * ****************************************************************************************************
+*/
+
+/*****************************************************************************************************/
+/**
+ * @brief Turn milliseconds into ticks, as FreeRTOS's pdMS_TO_TICKS() does, and never a wait into none.
+ *
+ * @param[in] ms  Milliseconds.
+ * @return Ticks: ms times TX_TIMER_TICKS_PER_SECOND over 1000, and at least one for any wait.
+ */
+static inline ULONG osal_ticks(uint32_t ms)
+{
+    ULONG ticks = (ULONG)(((uint64_t)ms * (uint64_t)TX_TIMER_TICKS_PER_SECOND) / 1000U);
+
+    /* What is left of a tick is dropped, so on ThreadX's default 100 Hz tick
+       5 ms is no tick at all, and a sleep or a mutex wait would end at once. A
+       wait that was asked for gets one tick at least. */
+    if ((ticks == 0U) && (ms > 0U))
+    {
+        ticks = 1U;
+    }
+
+    return ticks;
 }
 
 #ifdef __cplusplus

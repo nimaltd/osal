@@ -15,7 +15,8 @@
  *              See LICENSE.md in the project root for the full license text.
  *
  * @note        Included by osal.h when OSAL_RTOS is OSAL_RTOS_CMSIS_V1. Include
- *              osal.h, never this file.
+ *              osal.h, never this file. CMSIS-RTOS v1 takes milliseconds and
+ *              turns them into ticks itself, so every time goes in as it is.
  */
 
 #ifndef OSAL_CMSIS_V1_H
@@ -59,14 +60,6 @@ typedef struct
     osMutexId mutex; /**< The RTOS mutex. */
 
 } osal_mutex_t;
-
-/*
- * ****************************************************************************************************
- * Private function prototypes
- * ****************************************************************************************************
-*/
-
-static inline uint32_t osal_v1_ms(uint32_t ms);
 
 /*
  * ****************************************************************************************************
@@ -148,17 +141,9 @@ static inline osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_m
 
     if (mutex != NULL)
     {
-        uint32_t wait   = osWaitForever;
-        osStatus status = osErrorOS;
-
-        /* HAL_MAX_DELAY waits for ever, and is the same value as osWaitForever.
-           Anything else is rounded up to whole ticks. */
-        if (timeout_ms != HAL_MAX_DELAY)
-        {
-            wait = osal_v1_ms(timeout_ms);
-        }
-
-        status = osMutexWait(mutex->mutex, wait);
+        /* CMSIS-RTOS v1 waits in milliseconds, and its osWaitForever is the
+           same value as HAL_MAX_DELAY, so the timeout goes in as it is. */
+        osStatus status = osMutexWait(mutex->mutex, timeout_ms);
 
         if (status == osOK)
         {
@@ -196,60 +181,30 @@ static inline void osal_mutex_unlock(osal_mutex_t *mutex)
 
 /*****************************************************************************************************/
 /**
- * @brief Wait at least ms milliseconds, letting other threads run.
+ * @brief Wait ms milliseconds, letting other threads run.
  *
- * @param[in] ms  Milliseconds. 0 returns at once.
+ * @param[in] ms  Milliseconds. 0 returns at once, and HAL_MAX_DELAY never returns.
  */
 static inline void osal_delay_ms(uint32_t ms)
 {
-    /* 0 returns at once, since a zero sleep is not the same on every RTOS.
-       Anything else sleeps the thread, so other threads run, for whole ticks
-       and never less than asked. */
-    if (ms > 0U)
+    if (ms == HAL_MAX_DELAY)
     {
-        (void)osDelay(osal_v1_ms(ms));
-    }
-}
-
-/*
- * ****************************************************************************************************
- * Private function implementations
- * ****************************************************************************************************
-*/
-
-/*****************************************************************************************************/
-/**
- * @brief Round milliseconds up to whole ticks, still in the milliseconds CMSIS-RTOS v1 takes.
- *
- * FreeRTOS's CMSIS-RTOS v1 layer turns milliseconds into ticks by dividing by
- * the tick period and dropping the rest. On a 10 ms tick, 15 ms would become
- * one tick, 10 ms, shorter than asked. Rounded up here first, it is 20 ms, two
- * ticks. On the usual 1 kHz tick nothing changes.
- *
- * @param[in] ms  Milliseconds.
- * @return Milliseconds that are a whole number of ticks, one short of
- *         osWaitForever at most.
- */
-static inline uint32_t osal_v1_ms(uint32_t ms)
-{
-    uint32_t hz     = (uint32_t)osKernelSysTickFrequency;
-    uint32_t period = 1000U / hz;
-    uint64_t up     = ms;
-
-    /* The same period the layer divides by. A tick of 1 ms or faster needs no
-       rounding. */
-    if (period > 1U)
-    {
-        up = (uint64_t)osal_ticks(ms, hz) * period;
-
-        /* One short of "wait for ever", so a long finite wait stays finite. */
-        if (up > 0xFFFFFFFEU)
+        /* For ever, as HAL_MAX_DELAY is for a mutex. One sleep, even the
+           longest, ends after 49 days, so the thread sleeps again. */
+        for (;;)
         {
-            up = 0xFFFFFFFEU;
+            (void)osDelay(osWaitForever);
         }
     }
-
-    return (uint32_t)up;
+    else if (ms > 0U)
+    {
+        /* CMSIS-RTOS v1 takes milliseconds, and turns them into ticks itself. */
+        (void)osDelay(ms);
+    }
+    else
+    {
+        /* 0 returns at once, since a zero sleep is not the same on every RTOS. */
+    }
 }
 
 #ifdef __cplusplus

@@ -140,16 +140,28 @@ static inline void osal_mutex_unlock(osal_mutex_t *mutex)
 
 /*****************************************************************************************************/
 /**
- * @brief Wait at least ms milliseconds.
+ * @brief Wait ms milliseconds.
  *
- * @param[in] ms  Milliseconds. 0 returns at once.
+ * @param[in] ms  Milliseconds. 0 returns at once, and HAL_MAX_DELAY never returns.
  */
 static inline void osal_delay_ms(uint32_t ms)
 {
-    /* 0 returns at once, since HAL_Delay(0) still waits a tick. */
-    if (ms > 0U)
+    if (ms == HAL_MAX_DELAY)
+    {
+        /* For ever, as HAL_MAX_DELAY is for a mutex. HAL_Delay() itself ends
+           after 49 days, so it waits again. */
+        for (;;)
+        {
+            HAL_Delay(HAL_MAX_DELAY);
+        }
+    }
+    else if (ms > 0U)
     {
         HAL_Delay(ms);
+    }
+    else
+    {
+        /* 0 returns at once, since HAL_Delay(0) still waits a tick. */
     }
 }
 

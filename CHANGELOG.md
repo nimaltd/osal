@@ -15,13 +15,18 @@ and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.ht
   one it returns at once, since nothing else could run and a sleep would
   only make the wait end later.
 
-### Fixed
+### Changed
 
-- With CMSIS-RTOS v1, a delay or a mutex wait could be shorter than asked
-  on a tick slower than 1 ms. FreeRTOS's v1 layer divides by the tick period
-  and drops the rest, so 15 ms on a 10 ms tick slept 10. osal now rounds up
-  to whole ticks first, as the other ports always did. On the usual 1 kHz
-  tick nothing changes.
+- Milliseconds become ticks the RTOS's own way. Through CMSIS-RTOS v2 that
+  is FreeRTOS's `pdMS_TO_TICKS()`, so one a project defines in
+  `FreeRTOSConfig.h` is used, and `osal_cmsis_v2.h` now includes
+  `FreeRTOS.h`. ThreadX has no such macro, so osal does the same sum with
+  `TX_TIMER_TICKS_PER_SECOND`. What is left of a tick is dropped, where 1.0.0
+  rounded up: on a 100 Hz tick 25 ms now waits 20, not 30. On the usual 1 kHz
+  tick nothing changes, and a time under one tick still waits one. CMSIS-RTOS
+  v1 is given milliseconds as before.
+- `osal_delay_ms(HAL_MAX_DELAY)` waits for ever, as `HAL_MAX_DELAY` does for
+  a mutex, and never returns. In 1.0.0 it ended after about 49 days.
 
 ## [1.0.0] - 2026-10-01
 

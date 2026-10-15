@@ -189,7 +189,8 @@ Bare metal has no such rule: with `OSAL_RTOS_NONE`, call it from anywhere but an
 
 - **Not from an interrupt.** A mutex cannot be taken there, and a delay would block it.
 - **Do not take a mutex twice from one thread.** FreeRTOS then waits for ever, while ThreadX counts it, so code that relies on either does not move to the other.
-- **A timeout of `HAL_MAX_DELAY` waits for ever.** Any other timeout, and every delay, is rounded up to whole RTOS ticks, so a short wait never becomes no wait at all, and none is ever shorter than asked. That holds through CMSIS-RTOS v1 too, whose FreeRTOS layer would round down: on a 10 ms tick it would turn 15 ms into 10.
+- **`HAL_MAX_DELAY` waits for ever.** A mutex lock with it waits until the mutex is free, and `osal_delay_ms(HAL_MAX_DELAY)` never returns.
+- **Every other time becomes ticks the RTOS's own way.** CMSIS-RTOS v1 takes milliseconds and turns them into ticks itself. Through CMSIS-RTOS v2, osal uses FreeRTOS's `pdMS_TO_TICKS()`, so one your `FreeRTOSConfig.h` defines its own way is the one used. ThreadX has no such macro, only `TX_TIMER_TICKS_PER_SECOND`, so osal does the same sum with it. Each drops what is left of a tick: on a 100 Hz tick, 25 ms waits 20. On the usual 1 kHz tick nothing changes, and a time under one tick still waits one, never none.
 - **With CMSIS-RTOS the mutex comes from the FreeRTOS heap.** `OSAL_ERR_MUTEX` from `osal_mutex_create()` almost always means the heap is too small. With ThreadX it lives inside `osal_mutex_t`, so make that static or global.
 
 ---
@@ -203,7 +204,7 @@ Bare metal has no such rule: with `OSAL_RTOS_NONE`, call it from anywhere but an
 | `osal_err_t osal_mutex_create(osal_mutex_t *mutex)` | Create a mutex. Call it once per mutex |
 | `osal_err_t osal_mutex_lock(osal_mutex_t *mutex, uint32_t timeout_ms)` | Take it, waiting up to `timeout_ms` for another thread to give it back |
 | `void osal_mutex_unlock(osal_mutex_t *mutex)` | Give it back |
-| `void osal_delay_ms(uint32_t ms)` | Wait at least `ms` milliseconds. 0 returns at once |
+| `void osal_delay_ms(uint32_t ms)` | Wait `ms` milliseconds. 0 returns at once, and `HAL_MAX_DELAY` never returns |
 
 | Error | Means |
 |---|---|
