@@ -157,7 +157,7 @@ So work you would do once at power up, such as reading settings from an EEPROM, 
 void StartDefaultTask(void *argument)
 {
     ee24_init(&eeprom, &hi2c1, EE24_ADDRESS_DEFAULT, 256, NULL, 0);
-    ee24_read(&eeprom, 0, (uint8_t *)&settings, sizeof(settings), 100);
+    ee24_read(&eeprom, 0, (uint8_t *)&settings, sizeof(settings));
 
     for (;;)
     {
