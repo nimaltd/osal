@@ -20,7 +20,7 @@ provides: []
 
 # What the project has to offer before this library works.
 requires:
-  installer: 1.9.0    # the first that reads installer.yml
+  installer: 2.1.0    # every file at its own path; an older installer stops
   libraries: []       # other NimaLTD libraries, by name
   hal: true           # HAL_Delay
   cmsis: false
@@ -29,22 +29,21 @@ requires:
   peripherals: []     # no peripheral of its own
   c_standard: c11
 
-# The code keeps its src/ folder in the user's project, just as it sits here.
-install:
-  layout: mirror
+# Written for 2.1.0: every file keeps the path it has here, so src/ lands in
+# the user's project just as it sits, and headers and sources need no files
+# around them.
 
 # Headers only, so there is nothing to compile. osal.h stays first: the
 # installer reads the version from it. It includes the one port header that
 # osal_config.h names, so every port is copied and only one is ever built.
-files:
-  headers:
-    - src/osal.h
-    - src/osal_none.h
-    - src/osal_cmsis_v1.h
-    - src/osal_cmsis_v2.h
-    - src/osal_threadx.h
-    - src/osal_config.h     # replaced on install, its USER CODE section kept
-  sources: []
+headers:
+  - src/osal.h
+  - src/osal_none.h
+  - src/osal_cmsis_v1.h
+  - src/osal_cmsis_v2.h
+  - src/osal_threadx.h
+  - src/osal_config.h     # replaced on install, its USER CODE section kept
+sources: []
 
 # Copied as they are, alongside the code.
 extras:
