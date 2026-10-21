@@ -52,18 +52,18 @@ installed copy.
 
 ## ⚙️ Installing it
 
-[stm32-installer](https://github.com/nimaltd/stm32-installer) copies the library into your project, `osal_config.h` included, and adds it to your CMake, STM32CubeIDE, Keil, IAR or Makefile project for you. Your project file is backed up first.
+[lib-installer](https://github.com/nimaltd/lib-installer) copies the library into your project, `osal_config.h` included, and adds it to your CMake, STM32CubeIDE, Keil, IAR or Makefile project for you. Your project file is backed up first.
 
 Install it once per machine:
 
 ```bash
-pip install stm32-installer
+pip install lib-installer
 ```
 
 Then, from the root of your STM32 project:
 
 ```bash
-stm32-installer nimaltd/osal
+lib-installer nimaltd/osal
 ```
 
 ### From a downloaded zip
@@ -71,19 +71,19 @@ stm32-installer nimaltd/osal
 Downloaded this repository with **Code**, **Download ZIP**? Give the installer the zip in place of `nimaltd/osal`, with no need to unpack it:
 
 ```bash
-stm32-installer D:/Downloads/osal-main.zip
+lib-installer D:/Downloads/osal-main.zip
 ```
 
-Only the files the library needs are copied into your project, and the zip is left alone. An unpacked folder works the same way. [stm32-installer's README](https://github.com/nimaltd/stm32-installer#installing-a-library) has every option, and how to install on a machine with no internet at all.
+Only the files the library needs are copied into your project, and the zip is left alone. An unpacked folder works the same way. [lib-installer's README](https://github.com/nimaltd/lib-installer#installing-a-library) has every option, and how to install on a machine with no internet at all.
 
 ### Updating, and pinning a version
 
-Run the same command again. Every file is replaced, and your setting in `osal_config.h` is kept: whatever is between `USER CODE BEGIN OSAL_CONFIGURATION` and `USER CODE END OSAL_CONFIGURATION`. Anything you changed outside those lines is saved to a `.bak` file first. This needs stm32-installer 1.9.0 or newer. An older one cannot find the library: update it with `pip install --upgrade stm32-installer`.
+Run the same command again. Every file is replaced, and your setting in `osal_config.h` is kept: whatever is between `USER CODE BEGIN OSAL_CONFIGURATION` and `USER CODE END OSAL_CONFIGURATION`. Anything you changed outside those lines is saved to a `.bak` file first.
 
 By default you get the newest code on `main`. To hold a project on one release, add `--ref` with a tag, a branch or a commit:
 
 ```bash
-stm32-installer nimaltd/osal --ref v1.2.0
+lib-installer nimaltd/osal --ref v1.2.0
 ```
 
 ### Or copy the files in by hand
@@ -91,7 +91,7 @@ stm32-installer nimaltd/osal --ref v1.2.0
 1. Copy `src/osal.h` and the four port headers, `osal_none.h`, `osal_cmsis_v1.h`, `osal_cmsis_v2.h` and `osal_threadx.h`, into your project's `Core/Inc`
 2. Copy `src/osal_config.h` into `Core/Inc`
 
-Only the port your setting names is ever compiled, but keep all four, so changing the setting later needs no other file. There is no `.c` file. Keep your setting between the `USER CODE BEGIN` and `USER CODE END` lines of `osal_config.h`. Installing later with stm32-installer keeps what is between them and replaces the rest.
+Only the port your setting names is ever compiled, but keep all four, so changing the setting later needs no other file. There is no `.c` file. Keep your setting between the `USER CODE BEGIN` and `USER CODE END` lines of `osal_config.h`. Installing later with lib-installer keeps what is between them and replaces the rest.
 
 ### Or add the whole repository to a CMake build
 
